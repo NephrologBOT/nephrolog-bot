@@ -108,10 +108,11 @@ async def callback(request: Request):
 
     if status == "Approved":
         try:
-    await bot.send_message(user_id, f"✅ Оплату підтверджено! Ось ваше посилання: {GROUP_LINK}")
-{GROUP_LINK}")
+            await bot.send_message(
+                user_id,
+                f"✅ Оплату підтверджено! Ось ваше посилання: {GROUP_LINK}")
         except Exception as e:
-            print(f"❌ Failed to send message: {e}")
+            print(f"Failed to send message: {e}")
     return {"code": 0}
 
 @dp.message_handler(commands=["start"])
