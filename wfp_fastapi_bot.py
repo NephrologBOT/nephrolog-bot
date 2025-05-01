@@ -1,135 +1,125 @@
-import asyncio
 import hashlib
 import hmac
 import os
-import html
-from datetime import datetime
-from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse
-from aiogram import Bot, Dispatcher, types, executor
+import time
+import aiohttp
+import asyncio
 from dotenv import load_dotenv
+from fastapi import FastAPI, Request
+from aiogram import Bot, Dispatcher, types
+from starlette.responses import HTMLResponse
 import nest_asyncio
 
 load_dotenv()
 nest_asyncio.apply()
 
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-WAYFORPAY_SECRET_KEY = os.getenv("WAYFORPAY_SECRET_KEY")
-WAYFORPAY_ACCOUNT = os.getenv("WAYFORPAY_ACCOUNT")
-GROUP_LINK = os.getenv("GROUP_LINK")
-DEFAULT_PRICE = int(os.getenv("DEFAULT_PRICE", "1"))
-
-required_vars = ["BOT_TOKEN", "WAYFORPAY_SECRET_KEY", "WAYFORPAY_ACCOUNT", "GROUP_LINK"]
-missing_vars = [var for var in required_vars if not globals().get(var)]
+# Load environment variables
+required_vars = [
+    "BOT_TOKEN", "WAYFORPAY_ACCOUNT", "WAYFORPAY_SECRET_KEY",
+    "GROUP_LINK", "PUBLIC_HOST", "STANDARD_PRICE"
+]
+missing_vars = [var for var in required_vars if not os.getenv(var)]
 if missing_vars:
     raise ValueError(f"Environment variables missing: {', '.join(missing_vars)}. Please check Render settings.")
+
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+MERCHANT_ACCOUNT = os.getenv("WAYFORPAY_ACCOUNT")
+MERCHANT_SECRET = os.getenv("WAYFORPAY_SECRET_KEY")
+GROUP_LINK = os.getenv("GROUP_LINK")
+PUBLIC_HOST = os.getenv("PUBLIC_HOST")
+STANDARD_PRICE = int(os.getenv("STANDARD_PRICE"))
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(bot)
 app = FastAPI()
 
-@app.get("/", response_class=HTMLResponse)
-async def root():
-    return "OK"
+@app.get("/pay")
+async def pay(uid: str, amount: int):
+    order_reference = f"order_{uid}_{int(time.time())}"
+    order_date = int(time.time())
 
-@app.get("/pay", response_class=HTMLResponse)
-async def pay(uid: str, amount: int = DEFAULT_PRICE):
-    order_reference = f"INV{uid}{int(datetime.utcnow().timestamp())}"
-    order_date = int(datetime.utcnow().timestamp())
-    currency = "UAH"
-
-    product_name = ["Підписка на канал NephroLog"]
-    product_count = [1]
-    product_price = [amount]
-
-    fields_for_signature = [
-        WAYFORPAY_ACCOUNT,
-        order_reference,
-        str(order_date),
-        str(amount),
-        currency,
-        ",".join(product_name),
-        ",".join(map(str, product_count)),
-        ",".join(map(str, product_price)),
-    ]
-    sign_string = ";".join(fields_for_signature)
-    signature = hmac.new(
-        WAYFORPAY_SECRET_KEY.encode(),
-        sign_string.encode(),
-        hashlib.md5
-    ).hexdigest()
-
-    inputs = {
-        "merchantAccount": WAYFORPAY_ACCOUNT,
-        "merchantDomainName": "nephrolog.render.com",
-        "merchantSignature": signature,
+    data = {
+        "merchantAccount": MERCHANT_ACCOUNT,
+        "merchantDomainName": PUBLIC_HOST,
         "orderReference": order_reference,
         "orderDate": order_date,
         "amount": amount,
-        "currency": currency,
-        "productName[]": product_name,
-        "productCount[]": product_count,
-        "productPrice[]": product_price,
-        "clientFirstName": "Telegram",
-        "clientLastName": uid,
-        "clientEmail": f"{uid}@t.me",
-        "returnUrl": f"https://t.me/{(await bot.get_me()).username}"
+        "currency": "UAH",
+        "productName": ["Підписка NephroLog"],
+        "productPrice": [amount],
+        "productCount": [1],
+        "clientFirstName": "Підписник",
+        "clientLastName": "NephroLog",
+        "clientEmail": "test@example.com",
+        "clientPhone": "+380000000000",
+        "language": "UA",
+        "serviceUrl": f"{PUBLIC_HOST}/wfp-callback"
     }
 
-    form_inputs = "".join(
-        f'<input type="hidden" name="{html.escape(k)}" value="{html.escape(str(v[0] if isinstance(v, list) else v))}">'
-        for k, v in inputs.items()
-    )
+    sorted_data = [
+        MERCHANT_ACCOUNT,
+        PUBLIC_HOST,
+        order_reference,
+        str(order_date),
+        str(amount),
+        "UAH",
+        "Підписка NephroLog",
+        "1",
+        str(amount)
+    ]
+    signature_str = ";".join(sorted_data)
+    sign = hmac.new(MERCHANT_SECRET.encode(), signature_str.encode(), hashlib.md5).hexdigest()
+    data["merchantSignature"] = sign
 
-    html_form = f"""
-    <html>
-        <body onload='document.forms["payment"].submit()'>
-            <form name='payment' action='https://secure.wayforpay.com/pay' method='POST'>
-                {form_inputs}
-            </form>
-        </body>
-    </html>
+    inputs = "\n".join([
+        f'<input type="hidden" name="{k}" value="{','.join(map(str, v)) if isinstance(v, list) else v}"/>'
+        for k, v in data.items()
+    ])
+
+    html_content = f"""
+    <html><body>
+    <form id="wfp_form" method="POST" action="https://secure.wayforpay.com/pay">
+        {inputs}
+    </form>
+    <script>document.getElementById('wfp_form').submit();</script>
+    </body></html>
     """
-    return HTMLResponse(content=html_form)
+    return HTMLResponse(content=html_content)
 
 @app.post("/wfp-callback")
 async def callback(request: Request):
-    data = await request.json()
+    payload = await request.json()
+    received_sign = payload.get("merchantSignature")
 
-    signature_fields = [
-        "merchantAccount",
-        "orderReference",
-        "amount",
-        "currency",
-        "authCode",
-        "cardPan",
-        "transactionStatus",
-        "reasonCode"
+    keys_for_sign = [
+        "merchantAccount", "orderReference", "amount", "currency",
+        "authCode", "cardPan", "transactionStatus", "reasonCode"
     ]
+    sign_string = ";".join([str(payload.get(k, "")) for k in keys_for_sign])
+    expected_sign = hmac.new(MERCHANT_SECRET.encode(), sign_string.encode(), hashlib.md5).hexdigest()
 
+    if received_sign != expected_sign or payload.get("transactionStatus") != "Approved":
+        return {"code": 0, "message": "Invalid signature or transaction not approved"}
+
+    user_id = int(payload.get("orderReference").split("_")[1])
     try:
-        signature_base = ";".join(str(data[field]) for field in signature_fields)
-    except KeyError as e:
-        return {"code": 1, "message": f"Missing field in callback: {e}"}
+        await bot.send_message(user_id, f"✅ Оплату підтверджено! Ось ваше посилання: {GROUP_LINK}")
+    except Exception as e:
+        print("Error sending message:", e)
 
-    calculated_signature = hmac.new(
-        WAYFORPAY_SECRET_KEY.encode(),
-        signature_base.encode(),
-        hashlib.md5
-    ).hexdigest()
-
-    if calculated_signature != data.get("merchantSignature"):
-        return {"code": 2, "message": "Invalid signature"}
-
-    if data.get("transactionStatus") == "Approved":
-        user_id = int(data.get("clientLastName", 0))
-        asyncio.create_task(bot.send_message(user_id, f"✅ Оплату підтверджено! Ось ваше посилання: {GROUP_LINK}"))
-
-    return {"code": 0}
+    return {"code": 1, "message": "Payment confirmed"}
 
 @dp.message_handler(commands=["start"])
-async def start_handler(message: types.Message):
-    await message.answer("Привіт! Щоб отримати доступ до каналу, скористайся кнопкою оплати на сайті або напиши /pay")
+async def cmd_start(message: types.Message):
+    try:
+        url = f"{PUBLIC_HOST}/pay?uid={message.from_user.id}&amount={STANDARD_PRICE}"
+        await message.reply(f"👋 Привіт! Щоб отримати доступ до закритого каналу, натисни кнопку нижче для оплати.\n\n{url}")
+    except Exception as e:
+        await message.reply("Сталася помилка, спробуй пізніше.")
+        print("Start command error:", e)
 
-if __name__ == "__main__":
-    executor.start_polling(dp, skip_updates=True)
+async def on_startup(_):
+    print("Bot started")
+
+loop = asyncio.get_event_loop()
+loop.create_task(dp.start_polling())
