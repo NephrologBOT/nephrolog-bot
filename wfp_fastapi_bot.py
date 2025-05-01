@@ -2,20 +2,23 @@ import os
 import hmac
 import uuid
 import hashlib
+import asyncio
+from datetime import datetime
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse
 from dotenv import load_dotenv
-from aiogram import Bot
+from aiogram import Bot, Dispatcher, types
 
 load_dotenv()
 
-app = FastAPI()
-bot = Bot(token=os.getenv("API_TOKEN"))
-
+API_TOKEN = os.getenv("API_TOKEN")
 MERCHANT_SECRET = os.getenv("MERCHANT_SECRET")
 MERCHANT_ACCOUNT = os.getenv("MERCHANT_ACCOUNT")
 INVITE_LINK = os.getenv("INVITE_LINK")
 
+bot = Bot(token=API_TOKEN)
+dp = Dispatcher()
+app = FastAPI()
 paid_refs = set()
 
 
@@ -32,7 +35,7 @@ async def pay_page(uid: int, ref: str, amount: int):
         "amount": amount,
         "currency": "UAH",
         "orderReference": ref,
-        "orderDate": 1700000000,
+        "orderDate": int(datetime.now().timestamp()),
         "merchantAuthType": uid,
         "productName": "NephroLog",
         "productCount": "1",
@@ -45,19 +48,14 @@ async def pay_page(uid: int, ref: str, amount: int):
         f'<input type="hidden" name="{k}" value="{v}"/>' for k, v in payload.items()
     )
 
-    return f"""
-<!DOCTYPE html>
+    return f"""<!DOCTYPE html>
 <html>
-  <body>
-    <h2>🚧 DEBUG: Перевірка полів перед оплатою</h2>
-    <form method="POST" action="https://secure.wayforpay.com/pay" target="_blank">
+  <body onload=\"document.forms[0].submit()\">
+    <form method=\"POST\" action=\"https://secure.wayforpay.com/pay\">
       {form}
-      <button type="submit">🔁 Перейти до оплати вручну</button>
     </form>
-    <pre style="background:#f4f4f4;padding:1em">{payload}</pre>
   </body>
-</html>
-"""
+</html>"""
 
 
 @app.post("/wfp-callback")
@@ -73,3 +71,13 @@ async def callback(request: Request):
         await bot.send_message(user_id, INVITE_LINK)
 
     return {"status": "ok"}
+
+
+@dp.message(commands=["start"])
+async def start_handler(message: types.Message):
+    await message.answer("👋 Привіт! Це бот підписки на NephroLog.")
+
+
+@app.on_event("startup")
+async def on_startup():
+    asyncio.create_task(dp.start_polling(bot))
