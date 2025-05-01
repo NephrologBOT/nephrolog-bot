@@ -1,125 +1,103 @@
-import hashlib
-import hmac
-import os
+import logging
 import time
-import aiohttp
-import asyncio
-from dotenv import load_dotenv
+import hmac
+import hashlib
+import base64
 from fastapi import FastAPI, Request
+from fastapi.responses import HTMLResponse
 from aiogram import Bot, Dispatcher, types
-from starlette.responses import HTMLResponse
 import nest_asyncio
+import asyncio
+import os
+from dotenv import load_dotenv
 
 load_dotenv()
-nest_asyncio.apply()
 
 # Load environment variables
-required_vars = [
-    "BOT_TOKEN", "WAYFORPAY_ACCOUNT", "WAYFORPAY_SECRET_KEY",
-    "GROUP_LINK", "PUBLIC_HOST", "STANDARD_PRICE"
-]
-missing_vars = [var for var in required_vars if not os.getenv(var)]
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+WAYFORPAY_ACCOUNT = os.getenv("WAYFORPAY_ACCOUNT")
+WAYFORPAY_SECRET_KEY = os.getenv("WAYFORPAY_SECRET_KEY")
+GROUP_LINK = os.getenv("GROUP_LINK")
+STANDARD_PRICE = os.getenv("STANDARD_PRICE")
+DISCOUNT_PRICE = os.getenv("DISCOUNT_PRICE")
+DISCOUNT_LIMIT = os.getenv("DISCOUNT_LIMIT")
+GRACE_PERIOD_DAYS = os.getenv("GRACE_PERIOD_DAYS")
+PUBLIC_HOST = os.getenv("PUBLIC_HOST")
+
+required_vars = ["BOT_TOKEN", "WAYFORPAY_ACCOUNT", "WAYFORPAY_SECRET_KEY", "GROUP_LINK"]
+missing_vars = [var for var in required_vars if globals().get(var) is None]
 if missing_vars:
     raise ValueError(f"Environment variables missing: {', '.join(missing_vars)}. Please check Render settings.")
-
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-MERCHANT_ACCOUNT = os.getenv("WAYFORPAY_ACCOUNT")
-MERCHANT_SECRET = os.getenv("WAYFORPAY_SECRET_KEY")
-GROUP_LINK = os.getenv("GROUP_LINK")
-PUBLIC_HOST = os.getenv("PUBLIC_HOST")
-STANDARD_PRICE = int(os.getenv("STANDARD_PRICE"))
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(bot)
 app = FastAPI()
+nest_asyncio.apply()
+
+@app.on_event("startup")
+async def startup():
+    loop = asyncio.get_event_loop()
+    loop.create_task(dp.start_polling())
 
 @app.get("/pay")
-async def pay(uid: str, amount: int):
+async def pay(uid: int, amount: int):
     order_reference = f"order_{uid}_{int(time.time())}"
     order_date = int(time.time())
+    amount_str = str(amount)
 
     data = {
-        "merchantAccount": MERCHANT_ACCOUNT,
+        "merchantAccount": WAYFORPAY_ACCOUNT,
         "merchantDomainName": PUBLIC_HOST,
         "orderReference": order_reference,
         "orderDate": order_date,
-        "amount": amount,
+        "amount": amount_str,
         "currency": "UAH",
-        "productName": ["Підписка NephroLog"],
-        "productPrice": [amount],
-        "productCount": [1],
-        "clientFirstName": "Підписник",
-        "clientLastName": "NephroLog",
-        "clientEmail": "test@example.com",
-        "clientPhone": "+380000000000",
-        "language": "UA",
-        "serviceUrl": f"{PUBLIC_HOST}/wfp-callback"
+        "productName": ["Telegram group access"],
+        "productCount": ["1"],
+        "productPrice": [amount_str],
+        "clientFirstName": "Telegram",
+        "clientLastName": "User",
+        "clientEmail": "user@example.com",
+        "language": "UA"
     }
 
-    sorted_data = [
-        MERCHANT_ACCOUNT,
-        PUBLIC_HOST,
-        order_reference,
-        str(order_date),
-        str(amount),
-        "UAH",
-        "Підписка NephroLog",
-        "1",
-        str(amount)
+    keys = [
+        "merchantAccount", "merchantDomainName", "orderReference", "orderDate",
+        "amount", "currency", "productName", "productCount", "productPrice"
     ]
-    signature_str = ";".join(sorted_data)
-    sign = hmac.new(MERCHANT_SECRET.encode(), signature_str.encode(), hashlib.md5).hexdigest()
-    data["merchantSignature"] = sign
 
-    inputs = "\n".join([
-        f'<input type="hidden" name="{k}" value="{','.join(map(str, v)) if isinstance(v, list) else v}"/>'
-        for k, v in data.items()
-    ])
+    to_sign = ";".join(
+        [",").join(v) if isinstance(v, list) else str(v) for k, v in data.items() if k in keys]
+    )
+    signature = base64.b64encode(
+        hmac.new(
+            WAYFORPAY_SECRET_KEY.encode(), to_sign.encode(), hashlib.md5
+        ).digest()
+    ).decode()
+    data["merchantSignature"] = signature
 
-    html_content = f"""
-    <html><body>
-    <form id="wfp_form" method="POST" action="https://secure.wayforpay.com/pay">
-        {inputs}
-    </form>
-    <script>document.getElementById('wfp_form').submit();</script>
-    </body></html>
-    """
-    return HTMLResponse(content=html_content)
+    form_html = '<form id="paymentForm" method="POST" action="https://secure.wayforpay.com/pay">'
+    for k, v in data.items():
+        value = ",".join(map(str, v)) if isinstance(v, list) else v
+        form_html += f'<input type="hidden" name="{k}" value="{value}"/>'
+    form_html += '</form><script>document.getElementById("paymentForm").submit();</script>'
+
+    return HTMLResponse(content=form_html)
 
 @app.post("/wfp-callback")
 async def callback(request: Request):
-    payload = await request.json()
-    received_sign = payload.get("merchantSignature")
+    body = await request.json()
+    order_reference = body.get("orderReference")
+    uid = int(order_reference.split("_")[1])
 
-    keys_for_sign = [
-        "merchantAccount", "orderReference", "amount", "currency",
-        "authCode", "cardPan", "transactionStatus", "reasonCode"
-    ]
-    sign_string = ";".join([str(payload.get(k, "")) for k in keys_for_sign])
-    expected_sign = hmac.new(MERCHANT_SECRET.encode(), sign_string.encode(), hashlib.md5).hexdigest()
+    logging.info("Received callback: %s", body)
 
-    if received_sign != expected_sign or payload.get("transactionStatus") != "Approved":
-        return {"code": 0, "message": "Invalid signature or transaction not approved"}
+    if body.get("transactionStatus") == "Approved":
+        await bot.send_message(uid, "✅ Оплату підтверджено! Ось ваше посилання:")
+        await bot.send_message(uid, GROUP_LINK)
 
-    user_id = int(payload.get("orderReference").split("_")[1])
-    try:
-        await bot.send_message(user_id, f"✅ Оплату підтверджено! Ось ваше посилання: {GROUP_LINK}")
-    except Exception as e:
-        print("Error sending message:", e)
+    return {"status": "OK"}
 
-    return {"code": 1, "message": "Payment confirmed"}
-
-@dp.message_handler(commands=["start"])
-async def cmd_start(message: types.Message):
-    try:
-        url = f"{PUBLIC_HOST}/pay?uid={message.from_user.id}&amount={STANDARD_PRICE}"
-        await message.reply(f"👋 Привіт! Щоб отримати доступ до закритого каналу, натисни кнопку нижче для оплати.\n\n{url}")
-    except Exception as e:
-        await message.reply("Сталася помилка, спробуй пізніше.")
-        print("Start command error:", e)
-
-async def on_startup(_):
-    print("Bot started")
-
-loop = asyncio.get_event_loop()
-loop.create_task(dp.start_polling())
+@app.get("/")
+async def root():
+    return {"status": "running"}
