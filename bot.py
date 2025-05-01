@@ -1,60 +1,53 @@
+import logging
 import os
 from aiogram import Bot, Dispatcher, types
-from aiogram.types import KeyboardButton, ReplyKeyboardMarkup
-from aiogram.enums import ParseMode
-from aiogram.utils.markdown import hbold
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.utils import executor
 from dotenv import load_dotenv
 import uuid
 
 load_dotenv()
 
 API_TOKEN = os.getenv("API_TOKEN")
-PUBLIC_HOST = os.getenv("PUBLIC_HOST")
 STANDARD_PRICE = int(os.getenv("STANDARD_PRICE", 549))
 DISCOUNT_PRICE = int(os.getenv("DISCOUNT_PRICE", 439))
 DISCOUNT_LIMIT = int(os.getenv("DISCOUNT_LIMIT", 10))
+PUBLIC_HOST = os.getenv("PUBLIC_HOST")
 
-bot = Bot(token=API_TOKEN, parse_mode=ParseMode.HTML)
-dp = Dispatcher()
+logging.basicConfig(level=logging.INFO)
 
-counter = 0
+bot = Bot(token=API_TOKEN, parse_mode="HTML")
+dp = Dispatcher(bot)
 
-@dp.message()
-async def start_handler(msg: types.Message):
-    global counter
-    uid = msg.from_user.id
-    ref = f"sub-{uuid.uuid4().hex[:10]}"
-    amount = DISCOUNT_PRICE if counter < DISCOUNT_LIMIT else STANDARD_PRICE
-    counter += 1
+discount_counter = 0
 
-    pay_url = f"https://{PUBLIC_HOST}/pay?uid={uid}&ref={ref}&amount={amount}"
+@dp.message_handler(commands=['start'])
+async def start(message: types.Message):
+    global discount_counter
+    user_id = message.from_user.id
+    order_ref = f"sub-{uuid.uuid4().hex[:10]}"
 
-    kb = ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text="💳 Оплатити")]], resize_keyboard=True)
+    if discount_counter < DISCOUNT_LIMIT:
+        price = DISCOUNT_PRICE
+        discount_counter += 1
+        discount_note = " (знижка для перших 10 користувачів)"
+    else:
+        price = STANDARD_PRICE
+        discount_note = ""
 
-    await msg.answer(
-        f"💡 <b>Підписка на NephroLog</b>
-"
-        f"{hbold('Тариф')}: {amount} грн
+    pay_link = f"https://{PUBLIC_HOST}/pay?uid={user_id}&ref={order_ref}&amount={price}"
 
-"
-        f"Отримай доступ до закритої групи з професійною інформацією.
-
-"
-        f"Натисни кнопку нижче 👇",
-        reply_markup=kb
+    markup = InlineKeyboardMarkup(row_width=1)
+    markup.add(
+        InlineKeyboardButton(text=f"💳 Оплатити {price} грн", url=pay_link)
     )
 
-@dp.message(lambda m: m.text == "💳 Оплатити")
-async def pay_button(msg: types.Message):
-    global counter
-    uid = msg.from_user.id
-    ref = f"sub-{uuid.uuid4().hex[:10]}"
-    amount = DISCOUNT_PRICE if counter < DISCOUNT_LIMIT else STANDARD_PRICE
-    counter += 1
-    pay_url = f"https://{PUBLIC_HOST}/pay?uid={uid}&ref={ref}&amount={amount}"
-    await msg.answer(f"🔗 Посилання для оплати:
-{pay_url}")
+    await message.answer(
+        f"💡 <b>Підписка на NephroLog</b>\n"
+        f"Тариф: {price} грн{discount_note}\n\n"
+        "Отримай доступ до закритої групи з професійною інформацією.",
+        reply_markup=markup
+    )
 
-if __name__ == "__main__":
-    import asyncio
-    dp.run_polling(bot)
+if __name__ == '__main__':
+    executor.start_polling(dp, skip_updates=True)
