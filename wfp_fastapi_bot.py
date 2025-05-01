@@ -1,14 +1,16 @@
 import os
 import uuid
 import hmac
+import time
 import hashlib
 import asyncio
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse
 from dotenv import load_dotenv
 from aiogram import Bot, Dispatcher, types
+from aiogram.utils import executor
 
-# Завантаження змінних середовища
+# Завантаження .env
 load_dotenv()
 
 API_TOKEN = os.getenv("API_TOKEN")
@@ -17,23 +19,22 @@ MERCHANT_SECRET = os.getenv("MERCHANT_SECRET")
 INVITE_LINK = os.getenv("INVITE_LINK")
 PUBLIC_HOST = os.getenv("RENDER_EXTERNAL_URL")
 
-# Telegram бот
+# Telegram-бот
 bot = Bot(token=API_TOKEN)
 dp = Dispatcher(bot)
 
-# FastAPI додаток
+# FastAPI
 app = FastAPI()
 
-# Зберігаємо використані посилання
 paid_refs = set()
 
-# Генерація підпису для WayForPay
+# Генерація підпису
 def generate_signature(data: dict, secret: str) -> str:
     keys = sorted(data.keys())
     raw = ';'.join([str(data[k]) for k in keys])
     return hmac.new(secret.encode(), raw.encode(), hashlib.md5).hexdigest()
 
-# Сторінка для переадресації на оплату
+# Сторінка оплати
 @app.get("/pay", response_class=HTMLResponse)
 async def pay_page(uid: int, ref: str, amount: int):
     payload = {
@@ -41,14 +42,13 @@ async def pay_page(uid: int, ref: str, amount: int):
         "amount": amount,
         "currency": "UAH",
         "orderReference": ref,
-        "orderDate": 1700000000,
+        "orderDate": int(time.time()),
         "merchantAuthType": uid,
         "productName": ["NephroLog"],
         "productCount": ["1"],
         "productPrice": [amount]
     }
-    signature = generate_signature(payload, MERCHANT_SECRET)
-    payload["signature"] = signature
+    payload["signature"] = generate_signature(payload, MERCHANT_SECRET)
 
     form = "".join(
         f'<input type="hidden" name="{k}" value="{v}"/>' for k, v in payload.items()
@@ -63,7 +63,7 @@ async def pay_page(uid: int, ref: str, amount: int):
   </body>
 </html>"""
 
-# Callback від WayForPay
+# Обробка callback від WayForPay
 @app.post("/wfp-callback")
 async def callback(request: Request):
     data = await request.json()
@@ -78,7 +78,7 @@ async def callback(request: Request):
 
     return {"status": "ok"}
 
-# Обробка команди /start
+# Обробник команди /start
 @dp.message_handler(commands=["start"])
 async def start_handler(message: types.Message):
     await message.answer(
@@ -95,9 +95,8 @@ async def start_handler(message: types.Message):
         )
     )
 
-# Запуск polling після старту FastAPI
+# Запуск polling у фоні
 @app.on_event("startup")
 async def on_startup():
-    import nest_asyncio
-    nest_asyncio.apply()
-    asyncio.create_task(dp.start_polling())
+    loop = asyncio.get_event_loop()
+    loop.create_task(dp.start_polling())
