@@ -23,6 +23,10 @@ def generate_signature(data: dict, secret: str) -> str:
     raw = ';'.join([str(data[k]) for k in keys])
     return hmac.new(secret.encode(), raw.encode(), hashlib.md5).hexdigest()
 
+@app.get("/")  # <--- новий обробник кореневої сторінки
+async def root():
+    return {"status": "ok"}
+
 @app.get("/pay", response_class=HTMLResponse)
 async def pay_page(uid: int, ref: str, amount: int):
     payload = {
