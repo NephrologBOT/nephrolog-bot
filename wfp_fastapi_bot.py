@@ -6,9 +6,10 @@ from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse
 from dotenv import load_dotenv
 from aiogram import Bot, Dispatcher, types
+from aiogram.types import Update
 import asyncio
 
-# Завантаження змінних середовища
+# Завантаження .env
 load_dotenv()
 
 API_TOKEN = os.getenv("API_TOKEN")
@@ -17,19 +18,23 @@ MERCHANT_SECRET = os.getenv("MERCHANT_SECRET")
 INVITE_LINK = os.getenv("INVITE_LINK")
 PUBLIC_HOST = os.getenv("RENDER_EXTERNAL_URL")
 
+WEBHOOK_PATH = "/webhook"
+WEBHOOK_URL = f"{PUBLIC_HOST}{WEBHOOK_PATH}"
+
+# Ініціалізація Telegram-бота
 bot = Bot(token=API_TOKEN)
 dp = Dispatcher(bot)
-
 app = FastAPI()
+
 paid_refs = set()
 
-
+# Генерація підпису WayForPay
 def generate_signature(data: dict, secret: str) -> str:
     keys = sorted(data.keys())
     raw = ';'.join([str(data[k]) for k in keys])
     return hmac.new(secret.encode(), raw.encode(), hashlib.md5).hexdigest()
 
-
+# Обробка сторінки оплати
 @app.get("/pay", response_class=HTMLResponse)
 async def pay_page(uid: int, ref: str, amount: int):
     payload = {
@@ -59,7 +64,7 @@ async def pay_page(uid: int, ref: str, amount: int):
   </body>
 </html>"""
 
-
+# Обробка підтвердження оплати від WayForPay
 @app.post("/wfp-callback")
 async def callback(request: Request):
     data = await request.json()
@@ -74,24 +79,36 @@ async def callback(request: Request):
 
     return {"status": "ok"}
 
+# Обробка Telegram webhook
+@app.post(WEBHOOK_PATH)
+async def telegram_webhook(request: Request):
+    body = await request.json()
+    update = Update.to_object(body)
+    await dp.process_update(update)
+    return {"status": "ok"}
 
+# Установка/видалення webhook
+@app.on_event("startup")
+async def on_startup():
+    await bot.set_webhook(WEBHOOK_URL)
+
+@app.on_event("shutdown")
+async def on_shutdown():
+    await bot.delete_webhook()
+
+# Обробник команди /start
 @dp.message_handler(commands=["start"])
 async def start_handler(message: types.Message):
-    payment_url = f"{PUBLIC_HOST}/pay?uid={message.from_user.id}&ref=sub-{uuid.uuid4()}&amount=439"
-    markup = types.InlineKeyboardMarkup().add(
-        types.InlineKeyboardButton("💳 Оплатити зараз", url=payment_url)
-    )
-
     await message.answer(
-        "💡 <b>Підписка на NephroLog</b>\n"
+        "\U0001F4A1 <b>Підписка на NephroLog</b>\n"
         "Тариф: 439 грн\n\n"
         "Отримай доступ до закритої групи з професійною інформацією.\n\n"
         "Щоб оформити підписку, натисни кнопку нижче:",
         parse_mode="HTML",
-        reply_markup=markup
+        reply_markup=types.InlineKeyboardMarkup().add(
+            types.InlineKeyboardButton(
+                "\U0001F4B3 Оплатити зараз",
+                url=f"{PUBLIC_HOST}/pay?uid={message.from_user.id}&ref=sub-{uuid.uuid4()}&amount=439"
+            )
+        )
     )
-
-
-@app.on_event("startup")
-async def on_startup():
-    asyncio.create_task(dp.start_polling())
