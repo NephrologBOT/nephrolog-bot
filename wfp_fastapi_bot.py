@@ -1,14 +1,42 @@
-# ... (початок той самий до app = FastAPI())
+import hmac
+import hashlib
+import base64
+import time
+import os
+from dotenv import load_dotenv
 
-from aiogram import types
+from fastapi import FastAPI, Request
+from fastapi.responses import HTMLResponse
 
+from aiogram import Bot, types
+from aiogram.dispatcher import Dispatcher
+from aiogram.utils import executor
+
+import nest_asyncio
+
+load_dotenv()
+nest_asyncio.apply()
+
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+WAYFORPAY_ACCOUNT = os.getenv("WAYFORPAY_ACCOUNT")
+WAYFORPAY_SECRET_KEY = os.getenv("WAYFORPAY_SECRET_KEY")
+GROUP_LINK = os.getenv("GROUP_LINK")
+PRICE_UAH = os.getenv("STANDARD_PRICE") or "1"
+
+required_env_vars = {
+    "BOT_TOKEN": BOT_TOKEN,
+    "WAYFORPAY_ACCOUNT": WAYFORPAY_ACCOUNT,
+    "WAYFORPAY_SECRET_KEY": WAYFORPAY_SECRET_KEY,
+    "GROUP_LINK": GROUP_LINK,
+}
+
+missing_vars = [k for k, v in required_env_vars.items() if not v]
+if missing_vars:
+    raise ValueError(f"Environment variables missing: {', '.join(missing_vars)}. Please check Render settings.")
+
+bot = Bot(token=BOT_TOKEN)
+dp = Dispatcher(bot)
 app = FastAPI()
-
-@dp.message_handler(commands=["start"])
-async def start_handler(message: types.Message):
-    uid = message.from_user.id
-    link = f"https://nephrolog-bot.onrender.com/pay?uid={uid}"
-    await message.answer(f"Привіт! Щоб оформити підписку, перейдіть за посиланням: {link}")
 
 @app.get("/pay", response_class=HTMLResponse)
 async def pay_form(uid: str, amount: str = PRICE_UAH):
@@ -36,15 +64,8 @@ async def pay_form(uid: str, amount: str = PRICE_UAH):
     }
 
     keys = [
-        "merchantAccount",
-        "merchantDomainName",
-        "orderReference",
-        "orderDate",
-        "amount",
-        "currency",
-        "productName",
-        "productCount",
-        "productPrice",
+        "merchantAccount", "merchantDomainName", "orderReference", "orderDate",
+        "amount", "currency", "productName", "productCount", "productPrice"
     ]
 
     signature_base = ";".join([
@@ -61,21 +82,22 @@ async def pay_form(uid: str, amount: str = PRICE_UAH):
     merchant_signature = base64.b64encode(hmac_signature).decode()
     data["merchantSignature"] = merchant_signature
 
-    form_inputs = ''
-    for k in data:
-        value = ",".join(map(str, data[k])) if isinstance(data[k], list) else str(data[k])
-        form_inputs += f'<input type="hidden" name="{k}" value="{value}"/>\n'
+    form_inputs = ''.join([
+        f'<input type="hidden" name="{k}" value="{",".join(map(str, v)) if isinstance(v, list) else v}"/>'
+        for k, v in data.items()
+        if k in keys + ["merchantSignature", "clientFirstName", "clientLastName", "clientEmail", "serviceUrl"]
+    ])
 
-    html_form = f'''
-    <html><body>
-        <form id="wfp-form" method="POST" action="https://secure.wayforpay.com/pay">
-            {form_inputs}
-            <noscript><input type="submit" value="Сплатити"></noscript>
-            <input type="submit" value="Оплатити зараз" />
-        </form>
-        <script>document.getElementById("wfp-form").submit();</script>
-    </body></html>
-    '''
+    html_form = (
+        "<html><body>"
+        "<form id='wfp-form' method='POST' action='https://secure.wayforpay.com/pay'>"
+        f"{form_inputs}"
+        "<noscript><input type='submit' value='Оплатити'></noscript>"
+        "<button type='submit'>Перейти до оплати</button>"
+        "</form>"
+        "<script>document.getElementById('wfp-form').submit();</script>"
+        "</body></html>"
+    )
     return HTMLResponse(content=html_form)
 
 @app.post("/wfp-callback")
@@ -86,12 +108,14 @@ async def callback(request: Request):
 
     if status == "Approved":
         try:
-            await bot.send_message(user_id, "✅ Оплату підтверджено! Ось ваше посилання: \n" + GROUP_LINK)
+            await bot.send_message(user_id, f"✅ Оплату підтверджено! Ось ваше посилання: 
+{GROUP_LINK}")
         except Exception as e:
-            print(f"Failed to send message: {e}")
+            print(f"❌ Failed to send message: {e}")
     return {"code": 0}
 
-# Run bot
-import asyncio
-loop = asyncio.get_event_loop()
-loop.create_task(dp.start_polling())
+@dp.message_handler(commands=["start"])
+async def start_handler(message: types.Message):
+    uid = message.from_user.id
+    pay_link = f"https://nephrolog-bot.onrender.com/pay?uid={uid}"
+    await message.answer(f"Привіт! Щоб оформити підписку, перейдіть за посиланням: {pay_link}")
