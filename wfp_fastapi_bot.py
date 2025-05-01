@@ -47,14 +47,19 @@ async def pay_page(uid: int, ref: str, amount: int):
         f'<input type="hidden" name="{k}" value="{v}"/>' for k, v in payload.items()
     )
 
-    return f"""<!DOCTYPE html>
+  return f"""
+<!DOCTYPE html>
 <html>
-  <body onload="document.forms[0].submit()">
-    <form method="POST" action="https://secure.wayforpay.com/pay">
+  <body>
+    <h2>🚧 DEBUG: Перевірка полів перед оплатою</h2>
+    <form method="POST" action="https://secure.wayforpay.com/pay" target="_blank">
       {form}
+      <button type="submit">🔁 Перейти до оплати вручну</button>
     </form>
+    <pre style="background:#f4f4f4;padding:1em">{payload}</pre>
   </body>
-</html>"""
+</html>
+"""
 
 @app.post("/wfp-callback")
 async def callback(request: Request):
