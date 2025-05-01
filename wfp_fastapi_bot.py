@@ -1,126 +1,115 @@
-import os
-import uuid
+import time
 import hmac
 import hashlib
-import asyncio
+import json
 import nest_asyncio
-from datetime import datetime
-from fastapi import FastAPI, Request
+from typing import Dict, Any
+from fastapi import FastAPI, Request, Form
 from fastapi.responses import HTMLResponse
-from dotenv import load_dotenv
 from aiogram import Bot, Dispatcher, types
-from aiogram.types import Update
+from aiogram.utils import executor
+import os
+from dotenv import load_dotenv
 
-# Застосування nest_asyncio для коректної роботи у FastAPI
+load_dotenv()
 nest_asyncio.apply()
 
-# Завантаження .env
-load_dotenv()
+# --- Конфігурація ---
+MERCHANT_ACCOUNT = os.getenv("MERCHANT_ACCOUNT", "test_merch_n1")
+MERCHANT_SECRET_KEY = os.getenv("MERCHANT_SECRET_KEY", "flk3409refn54t54t*FNJRET")
+MERCHANT_DOMAIN = os.getenv("MERCHANT_DOMAIN", "nephrologbot.render.com")
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+GROUP_LINK = os.getenv("GROUP_LINK", "https://t.me/+sU9cddiye25mOTFi")
 
-API_TOKEN = os.getenv("API_TOKEN")
-MERCHANT_ACCOUNT = os.getenv("MERCHANT_ACCOUNT")
-MERCHANT_SECRET = os.getenv("MERCHANT_SECRET")
-INVITE_LINK = os.getenv("INVITE_LINK")
-PUBLIC_HOST = os.getenv("PUBLIC_HOST")
-
-# Налаштування шляху вебхука (не використовується)
-WEBHOOK_PATH = "/webhook"
-WEBHOOK_URL = f"{PUBLIC_HOST}{WEBHOOK_PATH}"
-
-# Ініціалізація Telegram-бота
-bot = Bot(token=API_TOKEN)
+bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(bot)
 app = FastAPI()
 
-paid_refs = set()
+@app.get("/", response_class=HTMLResponse)
+def root():
+    return "Bot is running"
 
-# Генерація підпису для WayForPay
-def generate_signature(data: list, secret: str) -> str:
-    raw = ';'.join(str(item) for item in data)
-    return hmac.new(secret.encode(), raw.encode(), hashlib.md5).hexdigest()
-
-# Сторінка з формою оплати
 @app.get("/pay", response_class=HTMLResponse)
-async def pay_page(uid: int):
-    order_ref = f"sub-{uuid.uuid4()}"
-    order_date = int(datetime.now().timestamp())
-    amount = 1  # тестова сума 1 грн
-
-    data = [
-        MERCHANT_ACCOUNT,
-        "nephrolog-bot.render.com",
-        order_ref,
-        order_date,
-        amount,
-        "UAH",
-        "NephroLog",
-        "1",
-        "1"
-    ]
-
-    signature = generate_signature(data, MERCHANT_SECRET)
+def pay(uid: int, amount: int = 1):  # за замовчуванням 1 грн для тесту
+    order_reference = f"test_order_{int(time.time())}"
+    order_date = int(time.time())
 
     payload = {
         "transactionType": "CREATE_INVOICE",
         "merchantAccount": MERCHANT_ACCOUNT,
-        "merchantDomainName": "nephrolog-bot.render.com",
-        "orderReference": order_ref,
+        "merchantAuthType": "SimpleSignature",
+        "merchantDomainName": MERCHANT_DOMAIN,
+        "apiVersion": 1,
+        "orderReference": order_reference,
         "orderDate": order_date,
         "amount": amount,
         "currency": "UAH",
         "productName": ["NephroLog"],
         "productCount": [1],
         "productPrice": [amount],
-        "merchantSignature": signature,
-        "apiVersion": 1,
-        "language": "UA",
-        "serviceUrl": f"{PUBLIC_HOST}/wfp-callback",
-        "merchantAuthType": "SimpleSignature"
+        "clientFirstName": "User",
+        "clientLastName": str(uid),
+        "serviceUrl": f"https://{MERCHANT_DOMAIN}/wfp-callback"
     }
 
-    inputs = "".join(
-        f'<input type="hidden" name="{k}" value="{v if not isinstance(v, list) else ','.join(map(str, v))}"/>'
-        for k, v in payload.items()
-    )
+    signature_string = ";".join([
+        payload["merchantAccount"],
+        payload["merchantDomainName"],
+        payload["orderReference"],
+        str(payload["orderDate"]),
+        str(payload["amount"]),
+        payload["currency"],
+        payload["productName"][0],
+        str(payload["productCount"][0]),
+        str(payload["productPrice"][0])
+    ])
 
-    return f"""<!DOCTYPE html>
-<html>
-  <body onload=\"document.forms[0].submit()\">
-    <form method=\"POST\" action=\"https://secure.wayforpay.com/pay\">
-      {inputs}
-    </form>
-  </body>
-</html>"""
+    payload["merchantSignature"] = hmac.new(
+        MERCHANT_SECRET_KEY.encode(),
+        signature_string.encode(),
+        hashlib.md5
+    ).hexdigest()
 
-# Колбек від WayForPay
+    form = ""
+    for k, v in payload.items():
+        form += f'<input type="hidden" name="{k}" value="{",".join(map(str, v)) if isinstance(v, list) else v}"/>'
+
+    html = f"""
+    <html>
+        <body onload=\"document.forms[0].submit()\">
+            <form method="POST" action="https://secure.wayforpay.com/pay">
+                {form}
+            </form>
+        </body>
+    </html>
+    """
+    return HTMLResponse(content=html)
+
 @app.post("/wfp-callback")
 async def callback(request: Request):
     data = await request.json()
-    status = data.get("transactionStatus")
-    user_id = int(data.get("merchantAuthType", 0))
-    ref = data.get("orderReference")
 
-    if status == "Approved" and ref not in paid_refs:
-        paid_refs.add(ref)
-        await bot.send_message(user_id, "✅ Оплату підтверджено! Ось ваше посилання:")
-        await bot.send_message(user_id, INVITE_LINK)
+    try:
+        user_id = int(data["clientLastName"])
+        if data.get("transactionStatus") == "Approved":
+            await bot.send_message(user_id, "✅ Оплату підтверджено! Ось ваше посилання:")
+            await bot.send_message(user_id, GROUP_LINK)
+    except Exception as e:
+        print(f"Помилка в callback: {e}")
+    return {"orderReference": data.get("orderReference"), "status": "accept", "time": int(time.time())}
 
-    return {"orderReference": ref, "status": "accept", "time": int(datetime.now().timestamp()),
-            "signature": generate_signature([ref, "accept", int(datetime.now().timestamp())], MERCHANT_SECRET)}
-
-# Обробник команди /start
-@dp.message_handler(commands=["start"])
+# Запуск бота
+@dp.message_handler(commands=['start'])
 async def start_handler(message: types.Message):
-    await message.answer(
-        "\U0001F4A1 <b>Підписка на NephroLog</b>\n"
-        "Тестова підписка: 1 грн\n\n"
-        "Отримай доступ до закритої групи з професійною інформацією.\n\n"
-        "Щоб оформити підписку, натисни кнопку нижче:",
-        parse_mode="HTML",
-        reply_markup=types.InlineKeyboardMarkup().add(
-            types.InlineKeyboardButton(
-                "\U0001F4B3 Оплатити зараз",
-                url=f"{PUBLIC_HOST}/pay?uid={message.from_user.id}"
-            )
-        )
-    )
+    await message.answer("Привіт! Натисни /pay щоб оформити підписку.")
+
+@dp.message_handler(commands=['pay'])
+async def pay_handler(message: types.Message):
+    pay_url = f"https://{MERCHANT_DOMAIN}/pay?uid={message.from_user.id}&amount=1"
+    await message.answer(f"🔗 Натисни для оплати: {pay_url}")
+
+@app.on_event("startup")
+async def on_startup():
+    import asyncio
+    loop = asyncio.get_event_loop()
+    loop.create_task(dp.start_polling())
