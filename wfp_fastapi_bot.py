@@ -1,24 +1,27 @@
 import os
-import hmac
 import uuid
+import hmac
 import hashlib
-import asyncio
-from datetime import datetime
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse
 from dotenv import load_dotenv
 from aiogram import Bot, Dispatcher, types
+from aiogram.utils import executor
+import asyncio
 
+# Load environment variables
 load_dotenv()
 
 API_TOKEN = os.getenv("API_TOKEN")
-MERCHANT_SECRET = os.getenv("MERCHANT_SECRET")
 MERCHANT_ACCOUNT = os.getenv("MERCHANT_ACCOUNT")
+MERCHANT_SECRET = os.getenv("MERCHANT_SECRET")
 INVITE_LINK = os.getenv("INVITE_LINK")
 
 bot = Bot(token=API_TOKEN)
 dp = Dispatcher(bot)
+
 app = FastAPI()
+
 paid_refs = set()
 
 
@@ -35,7 +38,7 @@ async def pay_page(uid: int, ref: str, amount: int):
         "amount": amount,
         "currency": "UAH",
         "orderReference": ref,
-        "orderDate": int(datetime.now().timestamp()),
+        "orderDate": 1700000000,
         "merchantAuthType": uid,
         "productName": "NephroLog",
         "productCount": "1",
@@ -50,8 +53,8 @@ async def pay_page(uid: int, ref: str, amount: int):
 
     return f"""<!DOCTYPE html>
 <html>
-  <body onload=\"document.forms[0].submit()\">
-    <form method=\"POST\" action=\"https://secure.wayforpay.com/pay\">
+  <body onload="document.forms[0].submit()">
+    <form method="POST" action="https://secure.wayforpay.com/pay">
       {form}
     </form>
   </body>
@@ -73,11 +76,28 @@ async def callback(request: Request):
     return {"status": "ok"}
 
 
-@dp.message(commands=["start"])
+@dp.message_handler(commands=["start"])
 async def start_handler(message: types.Message):
-    await message.answer("👋 Привіт! Це бот підписки на NephroLog.")
+    await message.answer(
+        "💡 <b>Підписка на NephroLog</b>\n"
+        "Тариф: 439 грн\n\n"
+        "Отримай доступ до закритої групи з професійною інформацією.\n\n"
+        "Щоб оформити підписку, натисни кнопку нижче:",
+        parse_mode="HTML",
+        reply_markup=types.InlineKeyboardMarkup().add(
+            types.InlineKeyboardButton(
+                "💳 Оплатити зараз",
+                url=f"https://{os.getenv('PUBLIC_HOST')}/pay?uid={message.from_user.id}&ref=sub-{uuid.uuid4()}&amount=439"
+            )
+        )
+    )
+
+
+def start_polling():
+    loop = asyncio.get_event_loop()
+    loop.create_task(dp.start_polling())
 
 
 @app.on_event("startup")
 async def on_startup():
-    asyncio.create_task(dp.start_polling(bot))
+    asyncio.create_task(dp.start_polling())
