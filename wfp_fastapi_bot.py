@@ -13,7 +13,6 @@ from aiogram.dispatcher import Dispatcher
 from aiogram.utils import executor
 
 import nest_asyncio
-import asyncio
 
 load_dotenv()
 nest_asyncio.apply()
@@ -83,11 +82,14 @@ async def pay_form(uid: str, amount: str = PRICE_UAH):
     merchant_signature = base64.b64encode(hmac_signature).decode()
     data["merchantSignature"] = merchant_signature
 
-    form_inputs = ''.join([
-        f'<input type="hidden" name="{k}" value="{','.join(map(str, v)) if isinstance(v, list) else v}"/>'
-        for k, v in data.items()
-        if k in keys + ["merchantSignature", "clientFirstName", "clientLastName", "clientEmail", "serviceUrl"]
-    ])
+    form_inputs = ""
+    for k, v in data.items():
+        if k in keys + ["merchantSignature", "clientFirstName", "clientLastName", "clientEmail", "serviceUrl"]:
+            if isinstance(v, list):
+                value = ",".join(map(str, v))
+            else:
+                value = str(v)
+            form_inputs += f'<input type="hidden" name="{k}" value="{value}"/>'
 
     html_form = (
         "<html><body>"
@@ -109,12 +111,12 @@ async def callback(request: Request):
 
     if status == "Approved":
         try:
-            keyboard = types.InlineKeyboardMarkup()
-            keyboard.add(types.InlineKeyboardButton("Перейти до групи", url=GROUP_LINK))
             await bot.send_message(
                 user_id,
-                "✅ Оплату підтверджено! Ось ваше посилання:",
-                reply_markup=keyboard
+                f"✅ Оплату підтверджено! Ось ваше посилання:",
+                reply_markup=types.InlineKeyboardMarkup().add(
+                    types.InlineKeyboardButton("Перейти до групи", url=GROUP_LINK)
+                )
             )
         except Exception as e:
             print(f"Failed to send message: {e}")
@@ -125,7 +127,3 @@ async def start_handler(message: types.Message):
     uid = message.from_user.id
     pay_link = f"https://nephrolog-bot.onrender.com/pay?uid={uid}"
     await message.answer(f"Привіт! Щоб оформити підписку, перейдіть за посиланням: {pay_link}")
-
-# Запускаємо бота паралельно з FastAPI
-loop = asyncio.get_event_loop()
-loop.create_task(executor.start_polling(dp, skip_updates=True))
