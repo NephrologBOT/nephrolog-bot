@@ -132,3 +132,7 @@ async def start_handler(message: types.Message):
     )
 
     await message.answer(text, reply_markup=keyboard, parse_mode="HTML")
+
+# 🔥 Додаємо запуск Telegram-бота
+if __name__ == "__main__":
+    executor.start_polling(dp)
