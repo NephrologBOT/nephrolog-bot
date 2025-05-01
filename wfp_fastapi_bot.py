@@ -6,15 +6,17 @@ import os
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse
-from aiogram import Bot, types
-from aiogram.dispatcher import Dispatcher
+from aiogram import Bot, Dispatcher, types
 from aiogram.utils import executor
 import nest_asyncio
+import asyncio
+import threading
 
+# Завантаження змінних середовища
 load_dotenv()
 nest_asyncio.apply()
 
-# Load env variables
+# Обов'язкові змінні середовища
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 WAYFORPAY_ACCOUNT = os.getenv("WAYFORPAY_ACCOUNT")
 WAYFORPAY_SECRET_KEY = os.getenv("WAYFORPAY_SECRET_KEY")
@@ -32,11 +34,17 @@ missing_vars = [k for k, v in required_env_vars.items() if not v]
 if missing_vars:
     raise ValueError(f"Environment variables missing: {', '.join(missing_vars)}. Please check Render settings.")
 
+# Ініціалізація бота та FastAPI
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(bot)
-
 app = FastAPI()
 
+# Команда /start
+@dp.message_handler(commands=["start"])
+async def start_handler(message: types.Message):
+    await message.answer("Привіт! Щоб оформити підписку, перейдіть за посиланням: https://nephrolog-bot.onrender.com/pay?uid=" + str(message.from_user.id))
+
+# Маршрут /pay
 @app.get("/pay", response_class=HTMLResponse)
 async def pay_form(uid: str, amount: str = PRICE_UAH):
     order_reference = f"ORDER-{uid}-{int(time.time())}"
@@ -88,10 +96,10 @@ async def pay_form(uid: str, amount: str = PRICE_UAH):
     merchant_signature = base64.b64encode(hmac_signature).decode()
     data["merchantSignature"] = merchant_signature
 
-    form_inputs = ""
-    for k in keys + ["merchantSignature", "clientFirstName", "clientLastName", "clientEmail", "serviceUrl"]:
-        value = ",".join(map(str, data[k])) if isinstance(data[k], list) else str(data[k])
-        form_inputs += f'<input type="hidden" name="{k}" value="{value}"/>\n'
+    form_inputs = ''.join([
+        f'<input type="hidden" name="{k}" value="{",".join(map(str, v)) if isinstance(v, list) else v}"/>'
+        for k, v in data.items() if k in keys + ["merchantSignature", "clientFirstName", "clientLastName", "clientEmail", "serviceUrl"]
+    ])
 
     html_form = f'''
     <html><body>
@@ -104,6 +112,7 @@ async def pay_form(uid: str, amount: str = PRICE_UAH):
     '''
     return HTMLResponse(content=html_form)
 
+# Callback від WayForPay
 @app.post("/wfp-callback")
 async def callback(request: Request):
     payload = await request.json()
@@ -112,7 +121,15 @@ async def callback(request: Request):
 
     if status == "Approved":
         try:
-            await bot.send_message(user_id, "✅ Оплату підтверджено! Ось ваше посилання: \n" + GROUP_LINK)
+            await bot.send_message(user_id, f"✅ Оплату підтверджено! Ось ваше посилання на групу:\n{GROUP_LINK}")
         except Exception as e:
             print(f"Failed to send message: {e}")
     return {"code": 0}
+
+# Запуск Telegram-бота в окремому потоці
+def start_telegram_bot():
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    executor.start_polling(dp, skip_updates=True)
+
+threading.Thread(target=start_telegram_bot).start()
