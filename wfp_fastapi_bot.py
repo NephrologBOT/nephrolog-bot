@@ -38,16 +38,16 @@ def generate_signature(data: dict, secret: str) -> str:
 @app.get("/pay", response_class=HTMLResponse)
 async def pay_page(uid: int, ref: str, amount: int):
     payload = {
-        "account": MERCHANT_ACCOUNT,
-        "amount": amount,
-        "currency": "UAH",
-        "orderReference": ref,
-        "orderDate": 1700000000,
-        "merchantAuthType": uid,
-        "productName": "NephroLog",
-        "productCount": "1",
-        "productPrice": amount
-    }
+    "account": MERCHANT_ACCOUNT,
+    "amount": amount,
+    "currency": "UAH",
+    "orderReference": ref,
+    "orderDate": 1700000000,
+    "merchantAuthType": uid,
+    "productName": ["NephroLog"],
+    "productCount": ["1"],
+    "productPrice": [amount]
+}
     signature = generate_signature(payload, MERCHANT_SECRET)
     payload["signature"] = signature
 
