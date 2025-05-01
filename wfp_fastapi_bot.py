@@ -1,11 +1,11 @@
 import hmac
 import uuid
+import os
 import hashlib
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse
 from dotenv import load_dotenv
 from aiogram import Bot
-import os
 
 load_dotenv()
 
@@ -34,7 +34,7 @@ async def pay_page(uid: int, ref: str, amount: int):
         "merchantAuthType": uid,
         "productName": "NephroLog",
         "productCount": "1",
-        "productPrice": amount
+        "productPrice": amount,
     }
     signature = generate_signature(payload, MERCHANT_SECRET)
     payload["signature"] = signature
@@ -45,8 +45,8 @@ async def pay_page(uid: int, ref: str, amount: int):
 
     return f"""<!DOCTYPE html>
 <html>
-  <body onload="document.forms[0].submit()">
-    <form method="POST" action="https://secure.wayforpay.com/pay">
+  <body onload=\"document.forms[0].submit()\">
+    <form method=\"POST\" action=\"https://secure.wayforpay.com/pay\">
       {form}
     </form>
   </body>
