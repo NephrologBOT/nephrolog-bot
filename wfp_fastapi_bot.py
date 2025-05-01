@@ -14,6 +14,7 @@ from aiogram.utils import executor
 
 import nest_asyncio
 
+# --- Завантаження змінних ---
 load_dotenv()
 nest_asyncio.apply()
 
@@ -34,10 +35,12 @@ missing_vars = [k for k, v in required_env_vars.items() if not v]
 if missing_vars:
     raise ValueError(f"Environment variables missing: {', '.join(missing_vars)}. Please check Render settings.")
 
+# --- Ініціалізація ---
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(bot)
 app = FastAPI()
 
+# --- Генерація форми WayForPay ---
 @app.get("/pay", response_class=HTMLResponse)
 async def pay_form(uid: str, amount: str = PRICE_UAH):
     order_reference = f"ORDER-{uid}-{int(time.time())}"
@@ -82,14 +85,11 @@ async def pay_form(uid: str, amount: str = PRICE_UAH):
     merchant_signature = base64.b64encode(hmac_signature).decode()
     data["merchantSignature"] = merchant_signature
 
-    form_inputs = ""
-    for k, v in data.items():
-        if k in keys + ["merchantSignature", "clientFirstName", "clientLastName", "clientEmail", "serviceUrl"]:
-            if isinstance(v, list):
-                value = ",".join(map(str, v))
-            else:
-                value = str(v)
-            form_inputs += f'<input type="hidden" name="{k}" value="{value}"/>'
+    form_inputs = ''.join([
+        f'<input type="hidden" name="{k}" value="{",".join(map(str, v)) if isinstance(v, list) else v}"/>'
+        for k, v in data.items()
+        if k in keys + ["merchantSignature", "clientFirstName", "clientLastName", "clientEmail", "serviceUrl"]
+    ])
 
     html_form = (
         "<html><body>"
@@ -103,6 +103,7 @@ async def pay_form(uid: str, amount: str = PRICE_UAH):
     )
     return HTMLResponse(content=html_form)
 
+# --- Обробка підтвердження оплати ---
 @app.post("/wfp-callback")
 async def callback(request: Request):
     payload = await request.json()
@@ -111,19 +112,29 @@ async def callback(request: Request):
 
     if status == "Approved":
         try:
+            button = types.InlineKeyboardMarkup()
+            button.add(types.InlineKeyboardButton("🔗 Перейти до групи", url=GROUP_LINK))
             await bot.send_message(
                 user_id,
-                f"✅ Оплату підтверджено! Ось ваше посилання:",
-                reply_markup=types.InlineKeyboardMarkup().add(
-                    types.InlineKeyboardButton("Перейти до групи", url=GROUP_LINK)
-                )
+                "✅ Оплату підтверджено! Ось ваше посилання:",
+                reply_markup=button
             )
         except Exception as e:
             print(f"Failed to send message: {e}")
     return {"code": 0}
 
+# --- Обробка /start ---
 @dp.message_handler(commands=["start"])
 async def start_handler(message: types.Message):
     uid = message.from_user.id
     pay_link = f"https://nephrolog-bot.onrender.com/pay?uid={uid}"
-    await message.answer(f"Привіт! Щоб оформити підписку, перейдіть за посиланням: {pay_link}")
+    await message.answer(
+        "Привіт! Щоб оформити підписку, натисніть кнопку нижче 👇",
+        reply_markup=types.InlineKeyboardMarkup().add(
+            types.InlineKeyboardButton("💳 Оплатити", url=pay_link)
+        )
+    )
+
+# --- Запуск бота ---
+if __name__ == "__main__":
+    executor.start_polling(dp, skip_updates=True)
