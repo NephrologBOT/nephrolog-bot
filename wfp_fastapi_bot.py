@@ -4,28 +4,26 @@ import uuid
 import hashlib
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse
-from aiogram import Bot
 from dotenv import load_dotenv
+from aiogram import Bot
 
 load_dotenv()
 
 app = FastAPI()
 bot = Bot(token=os.getenv("API_TOKEN"))
 
-MERCHANT_ACCOUNT = os.getenv("MERCHANT_ACCOUNT")
 MERCHANT_SECRET = os.getenv("MERCHANT_SECRET")
+MERCHANT_ACCOUNT = os.getenv("MERCHANT_ACCOUNT")
 INVITE_LINK = os.getenv("INVITE_LINK")
 
 paid_refs = set()
+
 
 def generate_signature(data: dict, secret: str) -> str:
     keys = sorted(data.keys())
     raw = ';'.join([str(data[k]) for k in keys])
     return hmac.new(secret.encode(), raw.encode(), hashlib.md5).hexdigest()
 
-@app.get("/")  # <--- новий обробник кореневої сторінки
-async def root():
-    return {"status": "ok"}
 
 @app.get("/pay", response_class=HTMLResponse)
 async def pay_page(uid: int, ref: str, amount: int):
@@ -47,7 +45,7 @@ async def pay_page(uid: int, ref: str, amount: int):
         f'<input type="hidden" name="{k}" value="{v}"/>' for k, v in payload.items()
     )
 
-  return f"""
+    return f"""
 <!DOCTYPE html>
 <html>
   <body>
@@ -60,6 +58,7 @@ async def pay_page(uid: int, ref: str, amount: int):
   </body>
 </html>
 """
+
 
 @app.post("/wfp-callback")
 async def callback(request: Request):
