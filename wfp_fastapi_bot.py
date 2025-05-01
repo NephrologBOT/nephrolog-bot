@@ -2,54 +2,62 @@ import os
 import uuid
 import hmac
 import hashlib
-import time
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse
 from dotenv import load_dotenv
 from aiogram import Bot, Dispatcher, types
-import asyncio
+from aiogram.types import Update
+from aiogram.dispatcher.webhook import get_new_configured_app
+from aiogram.utils.executor import set_webhook
 
-# Завантаження змінних середовища
 load_dotenv()
 
 API_TOKEN = os.getenv("API_TOKEN")
+WEBHOOK_PATH = "/webhook"
+WEBHOOK_URL = os.getenv("RENDER_EXTERNAL_URL") + WEBHOOK_PATH
+
 MERCHANT_ACCOUNT = os.getenv("MERCHANT_ACCOUNT")
 MERCHANT_SECRET = os.getenv("MERCHANT_SECRET")
 INVITE_LINK = os.getenv("INVITE_LINK")
-PUBLIC_HOST = os.getenv("PUBLIC_HOST")
 
 bot = Bot(token=API_TOKEN)
 dp = Dispatcher(bot)
-
 app = FastAPI()
+
 paid_refs = set()
 
 
-# ✅ Правильний порядок для генерації підпису
 def generate_signature(data: dict, secret: str) -> str:
-    ordered_keys = [
-        "account",
-        "amount",
-        "currency",
-        "orderReference",
-        "orderDate",
-        "productName",
-        "productCount",
-        "productPrice"
-    ]
-    raw = ';'.join(str(data[k]) for k in ordered_keys)
+    keys = sorted(data.keys())
+    raw = ';'.join([str(data[k]) for k in keys])
     return hmac.new(secret.encode(), raw.encode(), hashlib.md5).hexdigest()
+
+
+@app.on_event("startup")
+async def on_startup():
+    await bot.set_webhook(WEBHOOK_URL)
+
+
+@app.on_event("shutdown")
+async def on_shutdown():
+    await bot.delete_webhook()
+
+
+@app.post(WEBHOOK_PATH)
+async def telegram_webhook(update: dict):
+    telegram_update = Update.to_object(update)
+    await dp.process_update(telegram_update)
+    return {"status": "ok"}
 
 
 @app.get("/pay", response_class=HTMLResponse)
 async def pay_page(uid: int, ref: str, amount: int):
-    order_date = int(time.time())
     payload = {
         "account": MERCHANT_ACCOUNT,
         "amount": amount,
         "currency": "UAH",
         "orderReference": ref,
-        "orderDate": order_date,
+        "orderDate": 1700000000,
         "merchantAuthType": uid,
         "productName": "NephroLog",
         "productCount": "1",
@@ -89,23 +97,16 @@ async def callback(request: Request):
 
 @dp.message_handler(commands=["start"])
 async def start_handler(message: types.Message):
-    ref = f"sub-{uuid.uuid4()}"
-    amount = 439
-    pay_url = f"https://{PUBLIC_HOST}/pay?uid={message.from_user.id}&ref={ref}&amount={amount}"
-    keyboard = types.InlineKeyboardMarkup().add(
-        types.InlineKeyboardButton("💳 Оплатити зараз", url=pay_url)
-    )
-
     await message.answer(
-        "💡 <b>Підписка на NephroLog</b>\n"
+        "\U0001F4A1 <b>Підписка на NephroLog</b>\n"
         "Тариф: 439 грн\n\n"
         "Отримай доступ до закритої групи з професійною інформацією.\n\n"
         "Щоб оформити підписку, натисни кнопку нижче:",
         parse_mode="HTML",
-        reply_markup=keyboard
+        reply_markup=types.InlineKeyboardMarkup().add(
+            types.InlineKeyboardButton(
+                "\U0001F4B3 Оплатити зараз",
+                url=f"{os.getenv('RENDER_EXTERNAL_URL')}/pay?uid={message.from_user.id}&ref=sub-{uuid.uuid4()}&amount=439"
+            )
+        )
     )
-
-
-@app.on_event("startup")
-async def on_startup():
-    asyncio.create_task(dp.start_polling())
