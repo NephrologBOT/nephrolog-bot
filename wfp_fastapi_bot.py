@@ -17,7 +17,7 @@ MERCHANT_ACCOUNT = os.getenv("MERCHANT_ACCOUNT")
 INVITE_LINK = os.getenv("INVITE_LINK")
 
 bot = Bot(token=API_TOKEN)
-dp = Dispatcher()
+dp = Dispatcher(bot)
 app = FastAPI()
 paid_refs = set()
 
