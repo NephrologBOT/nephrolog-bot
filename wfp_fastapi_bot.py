@@ -77,9 +77,10 @@ async def pay_page(uid: int):
         "serviceUrl": f"{PUBLIC_HOST}/wfp-callback"
     }
 
-    form = "".join(
-        f'<input type="hidden" name="{k}" value="{v if not isinstance(v, list) else ','.join(map(str, v))}"/>'
-        for k, v in payload.items()
+   form = ""
+for k, v in payload.items():
+    value = ",".join(map(str, v)) if isinstance(v, list) else str(v)
+    form += f'<input type="hidden" name="{k}" value="{value}"/>'
     )
 
     return f"""<!DOCTYPE html>
