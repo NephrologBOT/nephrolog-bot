@@ -1,18 +1,21 @@
 import hmac
+import uuid
 import hashlib
-import os
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse
 from dotenv import load_dotenv
 from aiogram import Bot
+import os
 
 load_dotenv()
 
 app = FastAPI()
 bot = Bot(token=os.getenv("API_TOKEN"))
+
 MERCHANT_SECRET = os.getenv("MERCHANT_SECRET")
 MERCHANT_ACCOUNT = os.getenv("MERCHANT_ACCOUNT")
 INVITE_LINK = os.getenv("INVITE_LINK")
+
 paid_refs = set()
 
 def generate_signature(data: dict, secret: str) -> str:
