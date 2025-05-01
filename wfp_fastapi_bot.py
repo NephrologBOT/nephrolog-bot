@@ -119,4 +119,16 @@ async def callback(request: Request):
 async def start_handler(message: types.Message):
     uid = message.from_user.id
     pay_link = f"https://nephrolog-bot.onrender.com/pay?uid={uid}"
-    await message.answer(f"Привіт! Щоб оформити підписку, перейдіть за посиланням: {pay_link}")
+
+    keyboard = types.InlineKeyboardMarkup().add(
+        types.InlineKeyboardButton("💳 Оплатити зараз", url=pay_link)
+    )
+
+    text = (
+        "💡 <b>Підписка на NephroLog</b>\n"
+        f"<b>Тариф:</b> {PRICE_UAH} грн\n\n"
+        "Отримай доступ до закритої групи з професійною інформацією.\n\n"
+        "Щоб оформити підписку, натисни кнопку нижче:"
+    )
+
+    await message.answer(text, reply_markup=keyboard, parse_mode="HTML")
