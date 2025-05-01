@@ -4,7 +4,7 @@ import base64
 import time
 import os
 from dotenv import load_dotenv
-from fastapi import FastAPI, Request, Form
+from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse
 from aiogram import Bot, types
 from aiogram.dispatcher import Dispatcher
@@ -88,10 +88,10 @@ async def pay_form(uid: str, amount: str = PRICE_UAH):
     merchant_signature = base64.b64encode(hmac_signature).decode()
     data["merchantSignature"] = merchant_signature
 
-    form_inputs = ''.join([
-        f'<input type="hidden" name="{k}" value="{','.join(map(str, v)) if isinstance(v, list) else v}"/>'
-        for k, v in data.items() if k in keys + ["merchantSignature", "clientFirstName", "clientLastName", "clientEmail", "serviceUrl"]
-    ])
+    form_inputs = ""
+    for k in keys + ["merchantSignature", "clientFirstName", "clientLastName", "clientEmail", "serviceUrl"]:
+        value = ",".join(map(str, data[k])) if isinstance(data[k], list) else str(data[k])
+        form_inputs += f'<input type="hidden" name="{k}" value="{value}"/>\n'
 
     html_form = f'''
     <html><body>
