@@ -131,6 +131,6 @@ async def on_shutdown():
 @app.post("/webhook")
 async def telegram_webhook(update: dict):
     telegram_update = Update.model_validate(update)
-    await app.state.dp.feed_update(bot, telegram_update, bot.loop)
+    await app.state.dp.feed_update(bot, telegram_update)
     return {"ok": True}
 
