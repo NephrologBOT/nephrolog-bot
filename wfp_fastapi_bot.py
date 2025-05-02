@@ -30,7 +30,8 @@ app = FastAPI()
 WEBHOOK_PATH = "/webhook"
 WEBHOOK_URL = f"https://{DOMAIN}{WEBHOOK_PATH}"
 
-@router.message(commands=["start"])
+from aiogram.filters import Command
+@router.message(Command("start"))
 async def start_handler(message: types.Message):
     uid = message.from_user.id
     pay_link = f"https://{DOMAIN}/pay?uid={uid}"
