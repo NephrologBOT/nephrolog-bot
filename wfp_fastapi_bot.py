@@ -95,16 +95,17 @@ async def pay_form(uid: str, amount: str = PRICE_UAH):
             form_inputs += f'<input type="hidden" name="{k}" value="{v}"/>'
 
     html_form = f"""
-    <!DOCTYPE html>
-    <html>
-      <head><meta charset=\"utf-8\"><title>Оплата</title></head>
-      <body onload=\"document.forms[0].submit()\">
-        <form method=\"POST\" action=\"https://secure.wayforpay.com/pay\">
-          {form_inputs}
-        </form>
-      </body>
-    </html>
-    """
+<!DOCTYPE html>
+<html>
+  <head><meta charset="utf-8"><title>Оплата</title></head>
+  <body>
+    <form method="POST" action="https://secure.wayforpay.com/pay">
+      {form_inputs}
+      <button type="submit">Перейти до оплати</button>
+    </form>
+  </body>
+</html>
+"""
     return HTMLResponse(content=html_form)
 
 @app.post("/wfp-callback")
