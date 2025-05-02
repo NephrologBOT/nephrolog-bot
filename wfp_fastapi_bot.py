@@ -5,10 +5,8 @@ import time
 import os
 import asyncio
 from dotenv import load_dotenv
-
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse
-
 from aiogram import Bot, types, Dispatcher
 from aiogram.types import Update
 from aiogram.dispatcher.webhook import get_new_configured_app
@@ -43,7 +41,6 @@ app = FastAPI()
 WEBHOOK_PATH = "/webhook"
 WEBHOOK_URL = f"https://nephrolog-bot.onrender.com{WEBHOOK_PATH}"
 
-
 # --- Хендлер /start ---
 @dp.message_handler(commands=["start"])
 async def start_handler(message: types.Message):
@@ -56,14 +53,12 @@ async def start_handler(message: types.Message):
         )
     )
 
-
 # --- Обробка webhook (вхідні повідомлення від Telegram) ---
 @app.post(WEBHOOK_PATH)
 async def telegram_webhook(update: dict):
     telegram_update = Update.to_object(update)
     await dp.process_update(telegram_update)
     return {"ok": True}
-
 
 # --- Генерація форми оплати WayForPay ---
 @app.get("/pay", response_class=HTMLResponse)
@@ -72,7 +67,7 @@ async def pay_form(uid: str, amount: str = PRICE_UAH):
     order_date = str(int(time.time()))
     currency = "UAH"
     product_name = "Telegram Premium Access"
-    product_price = str(int(float(amount)))
+    product_price = str(int(float(amount)))  # гарантія, що буде ціле число
     amount = product_price  # синхронізуємо
     product_count = "1"
 
@@ -84,7 +79,7 @@ async def pay_form(uid: str, amount: str = PRICE_UAH):
         "amount": amount,
         "currency": currency,
         "productName": [product_name],
-        "productPrice": [int(product_price)],
+        "productPrice": [int(product_price)],  # ціле число
         "productCount": [int(product_count)],
         "clientFirstName": "User",
         "clientLastName": str(uid),  # обов'язково str!
@@ -132,7 +127,6 @@ async def pay_form(uid: str, amount: str = PRICE_UAH):
 
     return HTMLResponse(content=html_form)
 
-
 # --- Обробка підтвердження оплати ---
 @app.post("/wfp-callback")
 async def callback(request: Request):
@@ -152,7 +146,6 @@ async def callback(request: Request):
         except Exception as e:
             print(f"Failed to send message: {e}")
     return {"code": 0}
-
 
 # --- Під час запуску автоматично встановлюємо webhook ---
 @app.on_event("startup")
