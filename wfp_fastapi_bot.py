@@ -62,7 +62,7 @@ async def pay_form(uid: str, amount: str = PRICE_UAH):
         "productPrice": [int(product_price)],
         "productCount": [int(product_count)],
         "clientFirstName": "User",
-        "clientLastName": uid,
+        "clientLastName": str(uid),
         "clientEmail": f"user{uid}@nephrolog.com",
         "serviceUrl": "https://nephrolog-bot.onrender.com/wfp-callback",
     }
