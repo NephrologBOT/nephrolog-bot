@@ -122,5 +122,4 @@ async def on_startup():
     await bot.set_webhook(WEBHOOK_URL)
     dp = Dispatcher(storage=MemoryStorage())
     dp.include_router(router)
-    await dp.start_polling(bot)  # only to trigger router registration (will not be called due to webhook)
     app.mount("/", await setup_application(app, dp, bot))
