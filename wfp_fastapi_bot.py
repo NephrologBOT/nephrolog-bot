@@ -138,3 +138,7 @@ async def start_handler(message: types.Message):
 # --- Запуск бота ---
 if __name__ == "__main__":
     executor.start_polling(dp, skip_updates=True)
+@app.on_event("startup")
+async def on_startup():
+    loop = asyncio.get_event_loop()
+    loop.create_task(dp.start_polling()
