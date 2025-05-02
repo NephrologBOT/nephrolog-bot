@@ -48,7 +48,7 @@ async def pay_form(uid: str, amount: str = PRICE_UAH):
     order_date = str(int(time.time()))
     currency = "UAH"
     product_name = "Telegram Premium Access"
-    product_price = str(int(float(amount)))  # точний формат
+    product_price = str(int(float(amount.split(".")[0]))) if "." in amount else amount  # точний формат
     product_count = "1"
 
     data = {
