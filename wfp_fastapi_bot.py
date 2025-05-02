@@ -86,12 +86,13 @@ async def pay_form(uid: str, amount: str = PRICE_UAH):
     merchant_signature = base64.b64encode(hmac_signature).decode()
     data["merchantSignature"] = merchant_signature
 
-    form_inputs = ''.join([
-    f'<input type="hidden" name="{k}[]" value="{",".join(map(str, v))}"/>' if isinstance(v, list) and k in ["productName", "productCount", "productPrice"]
-    else f'<input type="hidden" name="{k}" value="{v}"/>'
-    for k, v in data.items()
-    if k in keys + ["merchantSignature", "clientFirstName", "clientLastName", "clientEmail", "serviceUrl"]
-])
+    form_inputs = ""
+for k, v in data.items():
+    if isinstance(v, list):
+        for item in v:
+            form_inputs += f'<input type="hidden" name="{k}[]" value="{item}"/>'
+    else:
+        form_inputs += f'<input type="hidden" name="{k}" value="{v}"/>'
 
     html_form = (
         "<html><body>"
