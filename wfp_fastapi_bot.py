@@ -122,4 +122,4 @@ async def on_startup():
     await bot.set_webhook(WEBHOOK_URL)
     dp = Dispatcher(storage=MemoryStorage())
     dp.include_router(router)
-    app.mount("/", await setup_application(app, dp, bot))
+    app.mount("/", await setup_application(app, dp))
