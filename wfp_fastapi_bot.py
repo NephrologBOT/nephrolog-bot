@@ -68,16 +68,16 @@ def create_invoice(uid: str, amount: str) -> str:
 
     # Формуємо SIGNATURE_STRING
     signature_parts = [
-        data["merchantAccount"],
-        data["merchantDomainName"],
-        data["orderReference"],
-        str(data["orderDate"]),
-        str(data["amount"]),
-        data["currency"],
-        *data["productName"],
-        *map(str, data["productCount"]),
-        *map(lambda x: f"{x:.2f}" if not float(x).is_integer() else str(int(x)), data["productPrice"])
-    ]
+    data["merchantAccount"],
+    data["merchantDomainName"],
+    data["orderReference"],
+    str(data["orderDate"]),
+    f"{data['amount']:.2f}",
+    data["currency"],
+    *data["productName"],
+    *map(str, data["productCount"]),
+    *map(lambda x: f"{x:.2f}", data["productPrice"])
+]
     signature_string = ";".join(signature_parts)
     print("SIGNATURE_STRING:", signature_string)
 
