@@ -25,7 +25,9 @@ DOMAIN = os.getenv("PUBLIC_HOST") or "nephrolog-bot.onrender.com"
 
 bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode="HTML"))
 router = Router()
-app = FastAPI()
+@app.get("/")
+async def root():
+    return {"status": "ok", "version": "v1"}
 
 WEBHOOK_PATH = "/webhook"
 WEBHOOK_URL = f"https://{DOMAIN}{WEBHOOK_PATH}"
