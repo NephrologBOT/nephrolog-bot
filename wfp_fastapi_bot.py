@@ -34,6 +34,57 @@ async def root():
 WEBHOOK_PATH = "/webhook"
 WEBHOOK_URL = f"https://{DOMAIN}{WEBHOOK_PATH}"
 
+def create_invoice(uid: str, amount: str) -> str:
+    import hmac
+    import hashlib
+    import base64
+    import time
+    import requests
+
+    order_reference = f"order-{uid}-{int(time.time())}"
+    order_date = int(time.time())
+    currency = "UAH"
+    product_name = ["Telegram Premium Access"]
+    product_price = [float(amount)]
+    product_count = [1]
+
+    data = {
+        "transactionType": "CREATE_INVOICE",
+        "merchantAccount": WAYFORPAY_ACCOUNT,
+        "merchantAuthType": "SimpleSignature",
+        "merchantDomainName": DOMAIN,
+        "merchantSignature": "",
+        "orderReference": order_reference,
+        "orderDate": order_date,
+        "amount": float(amount),
+        "currency": currency,
+        "productName": product_name,
+        "productCount": product_count,
+        "productPrice": product_price,
+        "language": "ua",
+        "serviceUrl": f"https://{DOMAIN}/wfp-callback",
+        "clientFirstName": "User",
+        "clientLastName": str(uid),
+        "clientEmail": f"user{uid}@nephrolog.com",
+    }
+
+    keys = [
+        data["merchantAccount"], data["merchantDomainName"], data["orderReference"],
+        data["orderDate"], data["amount"], data["currency"],
+        *product_name, *map(str, product_count), *map(str, product_price)
+    ]
+    signature_string = ";".join(map(str, keys))
+    signature = base64.b64encode(hmac.new(
+        WAYFORPAY_SECRET_KEY.encode(),
+        signature_string.encode(),
+        hashlib.md5
+    ).digest()).decode()
+
+    data["merchantSignature"] = signature
+
+    response = requests.post("https://api.wayforpay.com/api", json=data)
+    result = response.json()
+    return result["invoiceUrl"]
 from aiogram.filters import Command
 @router.message(Command("start"))
 async def start_handler(message: types.Message):
@@ -42,15 +93,12 @@ async def start_handler(message: types.Message):
     kb = types.InlineKeyboardMarkup(inline_keyboard=[[types.InlineKeyboardButton(text="💳 Оплатити", url=pay_link)]])
     await message.answer("Привіт! Щоб оформити підписку, натисніть кнопку нижче 👇", reply_markup=kb)
 
-@app.get("/pay", response_class=HTMLResponse)
-async def pay_form(uid: str, amount: str = PRICE_UAH):
-    order_reference = f"ORDER-{uid}-{int(time.time())}"
-    order_date = str(int(time.time()))
-    currency = "UAH"
-    product_name = "Telegram Premium Access"
-    product_price = str(int(float(amount)))
-    amount = product_price
-    product_count = "1"
+from fastapi.responses import RedirectResponse
+
+@app.get("/pay")
+async def pay_redirect(uid: str, amount: str = PRICE_UAH):
+    invoice_url = create_invoice(uid, amount)
+    return RedirectResponse(invoice_url)
 
     data = {
         "merchantAccount": WAYFORPAY_ACCOUNT,
