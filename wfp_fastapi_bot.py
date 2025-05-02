@@ -87,12 +87,12 @@ async def pay_form(uid: str, amount: str = PRICE_UAH):
     data["merchantSignature"] = merchant_signature
 
     form_inputs = ""
-for k, v in data.items():
-    if isinstance(v, list):
-        for item in v:
-            form_inputs += f'<input type="hidden" name="{k}[]" value="{item}"/>'
-    else:
-        form_inputs += f'<input type="hidden" name="{k}" value="{v}"/>'
+    for k, v in data.items():
+        if isinstance(v, list):
+            for item in v:
+                form_inputs += f'<input type="hidden" name="{k}[]" value="{item}"/>'
+        else:
+            form_inputs += f'<input type="hidden" name="{k}" value="{v}"/>'
 
     html_form = (
         "<html><body>"
@@ -139,7 +139,5 @@ async def start_handler(message: types.Message):
     )
 
 # --- Запуск бота ---
-@app.on_event("startup")
-async def on_startup():
-    loop = asyncio.get_event_loop()
-    loop.create_task(dp.start_polling())
+if __name__ == "__main__":
+    executor.start_polling(dp, skip_updates=True)
