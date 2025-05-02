@@ -9,10 +9,9 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse
 
-from aiogram import Bot, types
-from aiogram.dispatcher import Dispatcher
-from aiogram.utils import executor
-
+from aiogram import Bot, types, Dispatcher
+from aiogram.types import Update
+from aiogram.dispatcher.webhook import get_new_configured_app
 import nest_asyncio
 
 # --- Завантаження змінних ---
@@ -34,21 +33,47 @@ required_env_vars = {
 
 missing_vars = [k for k, v in required_env_vars.items() if not v]
 if missing_vars:
-    raise ValueError(f"Environment variables missing: {', '.join(missing_vars)}. Please check Render settings.")
+    raise ValueError(f"Environment variables missing: {', '.join(missing_vars)}")
 
-# --- Ініціалізація ---
+# --- Ініціалізація бота ---
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(bot)
 app = FastAPI()
 
-# --- Генерація форми WayForPay ---
+WEBHOOK_PATH = "/webhook"
+WEBHOOK_URL = f"https://nephrolog-bot.onrender.com{WEBHOOK_PATH}"
+
+
+# --- Хендлер /start ---
+@dp.message_handler(commands=["start"])
+async def start_handler(message: types.Message):
+    uid = message.from_user.id
+    pay_link = f"https://nephrolog-bot.onrender.com/pay?uid={uid}"
+    await message.answer(
+        "Привіт! Щоб оформити підписку, натисніть кнопку нижче 👇",
+        reply_markup=types.InlineKeyboardMarkup().add(
+            types.InlineKeyboardButton("💳 Оплатити", url=pay_link)
+        )
+    )
+
+
+# --- Обробка webhook (вхідні повідомлення від Telegram) ---
+@app.post(WEBHOOK_PATH)
+async def telegram_webhook(update: dict):
+    telegram_update = Update.to_object(update)
+    await dp.process_update(telegram_update)
+    return {"ok": True}
+
+
+# --- Генерація форми оплати WayForPay ---
 @app.get("/pay", response_class=HTMLResponse)
 async def pay_form(uid: str, amount: str = PRICE_UAH):
     order_reference = f"ORDER-{uid}-{int(time.time())}"
     order_date = str(int(time.time()))
     currency = "UAH"
     product_name = "Telegram Premium Access"
-    product_price = str(int(float(amount.split(".")[0]))) if "." in amount else amount  # точний формат
+    product_price = str(int(float(amount)))
+    amount = product_price  # синхронізуємо
     product_count = "1"
 
     data = {
@@ -56,48 +81,35 @@ async def pay_form(uid: str, amount: str = PRICE_UAH):
         "merchantDomainName": "nephrolog-bot.onrender.com",
         "orderReference": order_reference,
         "orderDate": order_date,
-        "amount": product_price,
+        "amount": amount,
         "currency": currency,
         "productName": [product_name],
         "productPrice": [int(product_price)],
         "productCount": [int(product_count)],
         "clientFirstName": "User",
-        "clientLastName": str(uid),
+        "clientLastName": str(uid),  # обов'язково str!
         "clientEmail": f"user{uid}@nephrolog.com",
         "serviceUrl": "https://nephrolog-bot.onrender.com/wfp-callback",
     }
 
-    # Поля для підпису — порядок важливий!
     keys = [
-        "merchantAccount",
-        "merchantDomainName",
-        "orderReference",
-        "orderDate",
-        "amount",
-        "currency",
-        "productName",
-        "productCount",
-        "productPrice"
+        "merchantAccount", "merchantDomainName", "orderReference", "orderDate",
+        "amount", "currency", "productName", "productCount", "productPrice"
     ]
 
-    # Формування підпису
     signature_base = ";".join([
         ",".join(str(x) for x in data[k]) if isinstance(data[k], list) else str(data[k])
         for k in keys
     ])
-
     hmac_signature = hmac.new(
         WAYFORPAY_SECRET_KEY.encode(),
         signature_base.encode(),
         hashlib.md5
     ).digest()
-
     merchant_signature = base64.b64encode(hmac_signature).decode()
-    print("SIGNATURE BASE:", signature_base)
-    print("MERCHANT SIGNATURE:", merchant_signature)
+
     data["merchantSignature"] = merchant_signature
 
-    # HTML форма
     form_inputs = ""
     for k, v in data.items():
         if isinstance(v, list):
@@ -107,18 +119,19 @@ async def pay_form(uid: str, amount: str = PRICE_UAH):
             form_inputs += f'<input type="hidden" name="{k}" value="{v}"/>'
 
     html_form = f"""
-<!DOCTYPE html>
-<html>
-  <head><meta charset="utf-8"><title>WayForPay</title></head>
-  <body onload="document.forms[0].submit()">
-    <form method="POST" action="https://secure.wayforpay.com/pay">
-      {form_inputs}
-    </form>
-  </body>
-</html>
-"""
+    <!DOCTYPE html>
+    <html>
+      <head><meta charset="utf-8"><title>Оплата</title></head>
+      <body onload="document.forms[0].submit()">
+        <form method="POST" action="https://secure.wayforpay.com/pay">
+          {form_inputs}
+        </form>
+      </body>
+    </html>
+    """
 
     return HTMLResponse(content=html_form)
+
 
 # --- Обробка підтвердження оплати ---
 @app.post("/wfp-callback")
@@ -140,23 +153,8 @@ async def callback(request: Request):
             print(f"Failed to send message: {e}")
     return {"code": 0}
 
-# --- Обробка /start ---
-@dp.message_handler(commands=["start"])
-async def start_handler(message: types.Message):
-    uid = message.from_user.id
-    pay_link = f"https://nephrolog-bot.onrender.com/pay?uid={uid}"
-    await message.answer(
-        "Привіт! Щоб оформити підписку, натисніть кнопку нижче 👇",
-        reply_markup=types.InlineKeyboardMarkup().add(
-            types.InlineKeyboardButton("💳 Оплатити", url=pay_link)
-        )
-    )
 
-# --- Запуск бота ---
-if __name__ == "__main__":
-    executor.start_polling(dp, skip_updates=True)
-
+# --- Під час запуску автоматично встановлюємо webhook ---
 @app.on_event("startup")
 async def on_startup():
-    loop = asyncio.get_event_loop()
-    loop.create_task(dp.start_polling())
+    await bot.set_webhook(WEBHOOK_URL)
