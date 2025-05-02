@@ -37,27 +37,31 @@ WEBHOOK_PATH = "/webhook"
 WEBHOOK_URL = f"https://{DOMAIN}{WEBHOOK_PATH}"
 
 def create_invoice(uid: str, amount: str) -> str:
-    import time
-    import hmac
-    import hashlib
     import requests
 
     order_reference = f"order-{uid}-{int(time.time())}"
     order_date = int(time.time())
+    currency = "UAH"
     product_name = ["Telegram Premium Access"]
     product_price = [float(amount)]
     product_count = [1]
 
+    # Правильне форматування ціни
+    price_string = [
+        f"{x:.2f}" if not float(x).is_integer() else f"{int(x)}.00"
+        for x in product_price
+    ]
+
     data = {
         "transactionType": "CREATE_INVOICE",
+        "apiVersion": 1,
         "merchantAccount": WAYFORPAY_ACCOUNT,
         "merchantAuthType": "SimpleSignature",
         "merchantDomainName": DOMAIN,
-        "apiVersion": 1,
         "orderReference": order_reference,
         "orderDate": order_date,
         "amount": float(amount),
-        "currency": "UAH",
+        "currency": currency,
         "productName": product_name,
         "productCount": product_count,
         "productPrice": product_price,
@@ -68,23 +72,15 @@ def create_invoice(uid: str, amount: str) -> str:
         "clientEmail": f"user{uid}@nephrolog.com",
     }
 
-    # Створення контрольного підпису
     keys = [
-        data["merchantAccount"],
-        data["merchantDomainName"],
-        data["orderReference"],
-        str(data["orderDate"]),
-        f"{data['amount']:.2f}",
-        data["currency"],
-        *data["productName"],
-        *map(str, data["productCount"]),
-        *map(lambda x: str(int(x)) if float(x).is_integer() else f"{x:.2f}", data["productPrice"])
+        data["merchantAccount"], data["merchantDomainName"], data["orderReference"],
+        data["orderDate"], data["amount"], data["currency"],
+        *product_name, *map(str, product_count), *price_string
     ]
-
-    signature_string = ";".join(keys)
+    signature_string = ";".join(map(str, keys))
     signature = hmac.new(
         WAYFORPAY_SECRET_KEY.encode(),
-        signature_string.encode("utf-8"),
+        signature_string.encode(),
         hashlib.md5
     ).hexdigest()
 
@@ -98,6 +94,9 @@ def create_invoice(uid: str, amount: str) -> str:
         response.raise_for_status()
         result = response.json()
         print("WAYFORPAY RESPONSE:", result)
+        if "invoiceUrl" not in result:
+            raise ValueError(f"WayForPay error: {result.get('reason')} ({result.get('reasonCode')})")
+        return result["invoiceUrl"]
     except Exception as e:
         print("Error in WayForPay request:", e)
         raise
