@@ -87,10 +87,11 @@ async def pay_form(uid: str, amount: str = PRICE_UAH):
     data["merchantSignature"] = merchant_signature
 
     form_inputs = ''.join([
-        f'<input type="hidden" name="{k}" value="{",".join(map(str, v)) if isinstance(v, list) else v}"/>'
-        for k, v in data.items()
-        if k in keys + ["merchantSignature", "clientFirstName", "clientLastName", "clientEmail", "serviceUrl"]
-    ])
+    f'<input type="hidden" name="{k}[]" value="{",".join(map(str, v))}"/>' if isinstance(v, list) and k in ["productName", "productCount", "productPrice"]
+    else f'<input type="hidden" name="{k}" value="{v}"/>'
+    for k, v in data.items()
+    if k in keys + ["merchantSignature", "clientFirstName", "clientLastName", "clientEmail", "serviceUrl"]
+])
 
     html_form = (
         "<html><body>"
