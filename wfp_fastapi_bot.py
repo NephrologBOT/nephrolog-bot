@@ -141,4 +141,4 @@ if __name__ == "__main__":
 @app.on_event("startup")
 async def on_startup():
     loop = asyncio.get_event_loop()
-    loop.create_task(dp.start_polling()
+    loop.create_task(dp.start_polling())
