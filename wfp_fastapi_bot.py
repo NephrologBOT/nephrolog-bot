@@ -106,7 +106,11 @@ async def pay_form(uid: str, amount: str = PRICE_UAH):
   </body>
 </html>
 """
-    return HTMLResponse(content=html_form)
+print("=== DEBUG WAYFORPAY SIGNATURE ===")
+print("SIGNATURE BASE:", signature_base)
+print("MERCHANT SIGNATURE:", merchant_signature)
+print("=================================")
+return HTMLResponse(content=html_form)
 
 @app.post("/wfp-callback")
 async def callback(request: Request):
