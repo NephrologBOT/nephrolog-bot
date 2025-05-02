@@ -3,16 +3,18 @@ import hashlib
 import base64
 import time
 import os
-import asyncio
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse
-from aiogram import Bot, Dispatcher, types
+from aiogram import Router, types, Bot
 from aiogram.types import Update
-import nest_asyncio
+from aiogram.client.default import DefaultBotProperties
+from aiogram.fsm.storage.memory import MemoryStorage
+from aiogram.dispatcher.dispatcher import Dispatcher
+from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
+from aiohttp import web
 
 load_dotenv()
-nest_asyncio.apply()
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 WAYFORPAY_ACCOUNT = os.getenv("WAYFORPAY_ACCOUNT")
@@ -21,33 +23,19 @@ GROUP_LINK = os.getenv("GROUP_LINK")
 PRICE_UAH = os.getenv("STANDARD_PRICE") or "1"
 DOMAIN = os.getenv("PUBLIC_HOST") or "nephrolog-bot.onrender.com"
 
-bot = Bot(token=BOT_TOKEN)
-dp = Dispatcher(bot)
+bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode="HTML"))
+router = Router()
 app = FastAPI()
 
 WEBHOOK_PATH = "/webhook"
 WEBHOOK_URL = f"https://{DOMAIN}{WEBHOOK_PATH}"
 
-@app.on_event("startup")
-async def on_startup():
-    await bot.set_webhook(WEBHOOK_URL)
-
-@app.post(WEBHOOK_PATH)
-async def telegram_webhook(update: dict):
-    telegram_update = Update.to_object(update)
-    await dp.process_update(telegram_update)
-    return {"ok": True}
-
-@dp.message_handler(commands=["start"])
+@router.message(commands=["start"])
 async def start_handler(message: types.Message):
     uid = message.from_user.id
     pay_link = f"https://{DOMAIN}/pay?uid={uid}"
-    await message.answer(
-        "Привіт! Щоб оформити підписку, натисніть кнопку нижче 👇",
-        reply_markup=types.InlineKeyboardMarkup().add(
-            types.InlineKeyboardButton("💳 Оплатити", url=pay_link)
-        )
-    )
+    kb = types.InlineKeyboardMarkup(inline_keyboard=[[types.InlineKeyboardButton(text="💳 Оплатити", url=pay_link)]])
+    await message.answer("Привіт! Щоб оформити підписку, натисніть кнопку нижче 👇", reply_markup=kb)
 
 @app.get("/pay", response_class=HTMLResponse)
 async def pay_form(uid: str, amount: str = PRICE_UAH):
@@ -122,13 +110,16 @@ async def callback(request: Request):
 
     if status == "Approved":
         try:
-            button = types.InlineKeyboardMarkup()
-            button.add(types.InlineKeyboardButton("🔗 Перейти до групи", url=GROUP_LINK))
-            await bot.send_message(
-                user_id,
-                "✅ Оплату підтверджено! Ось ваше посилання:",
-                reply_markup=button
-            )
+            kb = types.InlineKeyboardMarkup(inline_keyboard=[[types.InlineKeyboardButton(text="🔗 Перейти до групи", url=GROUP_LINK)]])
+            await bot.send_message(user_id, "✅ Оплату підтверджено! Ось ваше посилання:", reply_markup=kb)
         except Exception as e:
             print(f"Failed to send message: {e}")
     return {"code": 0}
+
+@app.on_event("startup")
+async def on_startup():
+    await bot.set_webhook(WEBHOOK_URL)
+    dp = Dispatcher(storage=MemoryStorage())
+    dp.include_router(router)
+    await dp.start_polling(bot)  # only to trigger router registration (will not be called due to webhook)
+    app.mount("/", await setup_application(app, dp, bot))
