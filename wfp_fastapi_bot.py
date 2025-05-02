@@ -72,7 +72,7 @@ def create_invoice(uid: str, amount: str) -> str:
     data["merchantDomainName"],
     data["orderReference"],
     str(data["orderDate"]),
-    f"{data['amount']:.2f}",
+    str(int(data["amount"])) if float(data["amount"]).is_integer() else f"{data['amount']:.2f}",
     data["currency"],
     *data["productName"],
     *map(lambda x: str(int(x)), data["productCount"]),
