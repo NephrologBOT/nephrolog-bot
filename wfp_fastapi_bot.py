@@ -48,7 +48,7 @@ async def pay_form(uid: str, amount: str = PRICE_UAH):
     order_date = str(int(time.time()))
     currency = "UAH"
     product_name = "Telegram Premium Access"
-    product_price = amount
+    product_price = str(int(float(amount)))  # точний формат
     product_count = "1"
 
     data = {
@@ -67,13 +67,22 @@ async def pay_form(uid: str, amount: str = PRICE_UAH):
         "serviceUrl": "https://nephrolog-bot.onrender.com/wfp-callback",
     }
 
+    # Поля для підпису — порядок важливий!
     keys = [
-        "merchantAccount", "merchantDomainName", "orderReference", "orderDate",
-        "amount", "currency", "productName", "productCount", "productPrice"
+        "merchantAccount",
+        "merchantDomainName",
+        "orderReference",
+        "orderDate",
+        "amount",
+        "currency",
+        "productName",
+        "productCount",
+        "productPrice"
     ]
 
+    # Формування підпису
     signature_base = ";".join([
-        ",".join(map(str, data[k])) if isinstance(data[k], list) else str(data[k])
+        ",".join(str(x) for x in data[k]) if isinstance(data[k], list) else str(data[k])
         for k in keys
     ])
 
@@ -86,6 +95,7 @@ async def pay_form(uid: str, amount: str = PRICE_UAH):
     merchant_signature = base64.b64encode(hmac_signature).decode()
     data["merchantSignature"] = merchant_signature
 
+    # HTML форма
     form_inputs = ""
     for k, v in data.items():
         if isinstance(v, list):
@@ -94,16 +104,18 @@ async def pay_form(uid: str, amount: str = PRICE_UAH):
         else:
             form_inputs += f'<input type="hidden" name="{k}" value="{v}"/>'
 
-    html_form = (
-        "<html><body>"
-        "<form id='wfp-form' method='POST' action='https://secure.wayforpay.com/pay'>"
-        f"{form_inputs}"
-        "<noscript><input type='submit' value='Оплатити'></noscript>"
-        "<button type='submit'>Перейти до оплати</button>"
-        "</form>"
-        "<script>document.getElementById('wfp-form').submit();</script>"
-        "</body></html>"
-    )
+    html_form = f"""
+    <!DOCTYPE html>
+    <html>
+      <head><meta charset="utf-8"><title>Оплата</title></head>
+      <body onload="document.forms[0].submit()">
+        <form method="POST" action="https://secure.wayforpay.com/pay">
+          {form_inputs}
+        </form>
+      </body>
+    </html>
+    """
+
     return HTMLResponse(content=html_form)
 
 # --- Обробка підтвердження оплати ---
