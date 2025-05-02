@@ -1,26 +1,8 @@
 services:
   - type: web
-    name: nephrolog-backend
+    name: nephrolog-bot
     env: python
     plan: free
-    buildCommand: "pip install -r requirements.txt"
-    startCommand: "bash start.sh"
-    envVars:
-      - key: API_TOKEN
-        value: your_bot_token_here
-      - key: MERCHANT_ACCOUNT
-        value: your_wayforpay_account
-      - key: MERCHANT_SECRET
-        value: your_wayforpay_secret
-      - key: INVITE_LINK
-        value: https://t.me/your_group_invite
-      - key: STANDARD_PRICE
-        value: "549"
-      - key: DISCOUNT_PRICE
-        value: "439"
-      - key: DISCOUNT_LIMIT
-        value: "10"
-      - key: GRACE_PERIOD_DAYS
-        value: "1"
-      - key: PUBLIC_HOST
-        value: your_public_host_here
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn wfp_fastapi_bot:app --host 0.0.0.0 --port 10000
+    autoDeploy: true
