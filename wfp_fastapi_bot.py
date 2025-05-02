@@ -45,24 +45,25 @@ def create_invoice(uid: str, amount: str) -> str:
     product_count = [1]
 
     data = {
-        "transactionType": "CREATE_INVOICE",
-        "merchantAccount": WAYFORPAY_ACCOUNT,
-        "merchantAuthType": "SimpleSignature",
-        "merchantDomainName": DOMAIN,
-        "merchantSignature": "",
-        "orderReference": order_reference,
-        "orderDate": order_date,
-        "amount": float(amount),
-        "currency": currency,
-        "productName": product_name,
-        "productCount": product_count,
-        "productPrice": product_price,
-        "language": "ua",
-        "serviceUrl": f"https://{DOMAIN}/wfp-callback",
-        "clientFirstName": "User",
-        "clientLastName": str(uid),
-        "clientEmail": f"user{uid}@nephrolog.com",
-    }
+    "transactionType": "CREATE_INVOICE",
+    "merchantAccount": WAYFORPAY_ACCOUNT,
+    "merchantAuthType": "SimpleSignature",
+    "merchantDomainName": DOMAIN,
+    "apiVersion": 1,  # <-- Додати це
+    "merchantSignature": "",
+    "orderReference": order_reference,
+    "orderDate": order_date,
+    "amount": float(amount),
+    "currency": currency,
+    "productName": product_name,
+    "productCount": product_count,
+    "productPrice": product_price,
+    "language": "ua",
+    "serviceUrl": f"https://{DOMAIN}/wfp-callback",
+    "clientFirstName": "User",
+    "clientLastName": str(uid),
+    "clientEmail": f"user{uid}@nephrolog.com",
+}
 
     keys = [
         data["merchantAccount"], data["merchantDomainName"], data["orderReference"],
