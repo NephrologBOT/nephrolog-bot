@@ -76,7 +76,7 @@ def create_invoice(uid: str, amount: str) -> str:
     data["currency"],
     *data["productName"],
     *map(lambda x: str(int(x)), data["productCount"]),
-    *map(lambda x: f"{x:.2f}", data["productPrice"])
+    *map(lambda x: str(int(x)) if float(x).is_integer() else f"{x:.2f}", data["productPrice"]),
 ]
     signature_string = ";".join(signature_parts)
     print("SIGNATURE_STRING:", signature_string)
