@@ -93,6 +93,8 @@ async def pay_form(uid: str, amount: str = PRICE_UAH):
     ).digest()
 
     merchant_signature = base64.b64encode(hmac_signature).decode()
+    print("SIGNATURE BASE:", signature_base)
+    print("MERCHANT SIGNATURE:", merchant_signature)
     data["merchantSignature"] = merchant_signature
 
     # HTML форма
