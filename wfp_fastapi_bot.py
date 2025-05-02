@@ -75,7 +75,7 @@ def create_invoice(uid: str, amount: str) -> str:
     f"{data['amount']:.2f}",
     data["currency"],
     *data["productName"],
-    *map(str, data["productCount"]),
+    *map(lambda x: str(int(x)), data["productCount"]),
     *map(lambda x: f"{x:.2f}", data["productPrice"])
 ]
     signature_string = ";".join(signature_parts)
