@@ -71,11 +71,11 @@ def create_invoice(uid: str, amount: str) -> str:
         *product_name, *map(str, product_count), *map(str, product_price)
     ]
     signature_string = ";".join(map(str, keys))
-    signature = base64.b64encode(hmac.new(
-        WAYFORPAY_SECRET_KEY.encode(),
-        signature_string.encode(),
-        hashlib.md5
-    ).digest()).decode()
+    signature = hmac.new(
+    WAYFORPAY_SECRET_KEY.encode(),
+    signature_string.encode(),
+    hashlib.md5
+).hexdigest()
 
     data["merchantSignature"] = signature
 
