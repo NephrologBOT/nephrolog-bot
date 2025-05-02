@@ -119,12 +119,18 @@ async def callback(request: Request):
 
 @app.on_event("startup")
 async def on_startup():
-    await bot.set_webhook(WEBHOOK_URL)
     dp = Dispatcher(storage=MemoryStorage())
     dp.include_router(router)
-    app.mount("/", await setup_application(app, dp))  # 🟢 вже виправлено тут
+    app.state.dp = dp
+    await bot.set_webhook(WEBHOOK_URL)
 
 @app.on_event("shutdown")
 async def on_shutdown():
     await bot.session.close()
+
+@app.post("/webhook")
+async def telegram_webhook(update: dict):
+    telegram_update = Update.model_validate(update)
+    await app.state.dp.feed_update(bot, telegram_update, bot.loop)
+    return {"ok": True}
 
