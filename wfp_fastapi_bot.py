@@ -5,6 +5,10 @@ import time
 import os
 import json
 import requests
+import asyncio
+import sqlite3
+from datetime import datetime, timedelta
+from aiogram import Bot, types
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -35,6 +39,62 @@ def save_processed_orders(processed_orders):
 processed_orders = load_processed_orders()
 
 load_dotenv()
+# === Налаштування ===
+DB_NAME = "subscriptions.db"
+REMINDER_DELTA = timedelta(minutes=5)  # час до закінчення для нагадування
+TRIAL_DURATION = timedelta(minutes=10)  # тривалість підписки (тестова)
+
+# === Ініціалізація БД ===
+def init_db():
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS subscriptions (
+            user_id INTEGER PRIMARY KEY,
+            start_time TEXT,
+            end_time TEXT,
+            notified INTEGER DEFAULT 0
+        )
+    ''')
+    conn.commit()
+    conn.close()
+
+# === Додавання підписки ===
+def add_subscription(user_id: int):
+    now = datetime.utcnow()
+    end = now + TRIAL_DURATION
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    cursor.execute("REPLACE INTO subscriptions (user_id, start_time, end_time, notified) VALUES (?, ?, ?, 0)",
+                   (user_id, now.isoformat(), end.isoformat()))
+    conn.commit()
+    conn.close()
+
+# === Перевірка підписок ===
+async def check_subscriptions(bot: Bot):
+    while True:
+        now = datetime.utcnow()
+        conn = sqlite3.connect(DB_NAME)
+        cursor = conn.cursor()
+
+        # Надіслати нагадування
+        cursor.execute("SELECT user_id FROM subscriptions WHERE end_time <= ? AND notified = 0",
+                       ((now + REMINDER_DELTA).isoformat(),))
+        for row in cursor.fetchall():
+            user_id = row[0]
+            try:
+                await bot.send_message(user_id, "⏳ Підписка закінчується менше ніж за 5 хвилин")
+                cursor.execute("UPDATE subscriptions SET notified = 1 WHERE user_id = ?", (user_id,))
+            except Exception as e:
+                print(f"Failed to send reminder to {user_id}: {e}")
+
+        # Видалити завершені підписки
+        cursor.execute("DELETE FROM subscriptions WHERE end_time <= ?", (now.isoformat(),))
+
+        conn.commit()
+        conn.close()
+
+        await asyncio.sleep(60)  # перевірка щохвилини
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 WAYFORPAY_ACCOUNT = os.getenv("WAYFORPAY_ACCOUNT")
@@ -176,10 +236,12 @@ async def callback(request: Request):
 
 @app.on_event("startup")
 async def on_startup():
+    init_db()  # ініціалізація БД
     dp = Dispatcher(storage=MemoryStorage())
     dp.include_router(router)
     app.state.dp = dp
     await bot.set_webhook(WEBHOOK_URL)
+    asyncio.create_task(check_subscriptions(bot))  # запуск перевірки підписок
 
 @app.on_event("shutdown")
 async def on_shutdown():
