@@ -1,29 +1,27 @@
 import hmac
- import hashlib
- import base64
- import time
- import os
- import json
- import requests
- import asyncio
- import sqlite3
- from datetime import datetime, timedelta
- from aiogram import Bot, types
- from dotenv import load_dotenv
- from fastapi import FastAPI, Request
- from fastapi.responses import HTMLResponse, RedirectResponse
- from aiogram import Router, types, Bot
- from aiogram.types import Update
- from aiogram.client.default import DefaultBotProperties
- from aiogram.fsm.storage.memory import MemoryStorage
- from aiogram.dispatcher.dispatcher import Dispatcher
- from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
- from aiohttp import web
- from aiogram.filters import Command
+import hashlib
+import base64
+import time
+import os
+import json
+import requests
+import asyncio
+import sqlite3
+from datetime import datetime, timedelta
+from aiogram import Bot, types
+from dotenv import load_dotenv
+from fastapi import FastAPI, Request
+from fastapi.responses import HTMLResponse, RedirectResponse
+from aiogram import Router, types, Bot
+from aiogram.types import Update
+from aiogram.client.default import DefaultBotProperties
+from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
+from aiohttp import web
+from aiogram.filters import Command
  
- PROCESSED_ORDERS_FILE = "processed_orders.json"
+PROCESSED_ORDERS_FILE = "processed_orders.json"
  
- def load_processed_orders():
+def load_processed_orders():
      if not os.path.exists(PROCESSED_ORDERS_FILE):
          return set()
      with open(PROCESSED_ORDERS_FILE, "r") as f:
