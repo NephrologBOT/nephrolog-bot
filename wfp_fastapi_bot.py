@@ -268,39 +268,48 @@ async def start_handler(message: types.Message):
 async def ask_promo_code(callback: types.CallbackQuery):
     await callback.message.answer("Введіть ваш промокод у відповідь на це повідомлення.")
     await callback.answer()
-@router.message(lambda message: message.reply_to_message and "промокод" in message.reply_to_message.text.lower())
+@router.message()
 async def handle_promo_code(message: types.Message):
     code = message.text.strip().upper()
     discount = PROMO_CODES.get(code)
 
     if discount is None:
         await message.reply("❌ Промокод недійсний. Спробуйте ще раз.")
+        return
+
+    uid = message.from_user.id
+    amount = float(PRICE_UAH)
+    discounted = max(0, amount * (1 - discount / 100))
+
+    # ✅ Записуємо використаний промокод у БД
+    try:
+        conn = get_pg_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO used_promo_codes (user_id, promo_code) VALUES (%s, %s)",
+            (uid, code)
+        )
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"⚠️ Не вдалося зберегти промокод у БД: {e}")
+
+    if discount == 100:
+        add_subscription(uid)  # ⏱ Додаємо підписку вручну
+        await message.answer(
+            "✅ Промокод на 100% застосовано! Ви отримали доступ до групи:",
+            reply_markup=types.InlineKeyboardMarkup(inline_keyboard=[
+                [types.InlineKeyboardButton(text="🔗 Перейти до групи", url=GROUP_LINK)]
+            ])
+        )
     else:
-        uid = message.from_user.id
-        amount = float(PRICE_UAH)
-        discounted = max(0, amount * (1 - discount / 100))
         pay_url = f"https://{DOMAIN}/pay?uid={uid}&amount={discounted:.2f}"
-
-        # ✅ Записуємо використаний промокод у БД
-        try:
-            conn = get_pg_connection()
-            cursor = conn.cursor()
-            cursor.execute(
-                "INSERT INTO used_promo_codes (user_id, promo_code) VALUES (%s, %s)",
-                (uid, code)
-            )
-            conn.commit()
-            conn.close()
-        except Exception as e:
-            print(f"⚠️ Не вдалося зберегти промокод у БД: {e}")
-
         await message.answer(
             f"✅ Промокод застосовано! Знижка: {discount}%. Сума до сплати: {discounted:.2f} грн\n\nНатисніть нижче 👇",
             reply_markup=types.InlineKeyboardMarkup(inline_keyboard=[
                 [types.InlineKeyboardButton(text="💳 Оплатити зі знижкою", url=pay_url)]
             ])
         )
-
 
 @router.message(Command("admin_promo"))
 async def promo_stats_handler(message: types.Message):
