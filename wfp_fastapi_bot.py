@@ -61,6 +61,17 @@ def init_db():
     conn.commit()
     conn.close()
 
+def is_subscription_active(user_id: int) -> bool:
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    cursor.execute("SELECT end_time FROM subscriptions WHERE user_id = ?", (user_id,))
+    row = cursor.fetchone()
+    conn.close()
+    if row:
+        end_time = datetime.fromisoformat(row[0])
+        return end_time > datetime.utcnow()
+    return False
+
 # === Додавання підписки ===
 def add_subscription(user_id: int):
     now = datetime.utcnow()
@@ -227,20 +238,22 @@ async def callback(request: Request):
         return {"code": 0}
 
     if status == "Approved" and user_id:
-        try:
-            kb = types.InlineKeyboardMarkup(inline_keyboard=[
-            [types.InlineKeyboardButton(text="🔗 Перейти до групи", url=GROUP_LINK)]
-            ])
-            await bot.send_message(user_id, "✅ Оплата успішна! Ось ваше посилання:", reply_markup=kb)
+        if is_subscription_active(user_id):
+            print(f"User {user_id} already has active subscription — skipping invite")
+        else:
+            try:
+                kb = types.InlineKeyboardMarkup(inline_keyboard=[
+                    [types.InlineKeyboardButton(text="🔗 Перейти до групи", url=GROUP_LINK)]
+                ])
+                await bot.send_message(user_id, "✅ Оплата успішна! Ось ваше посилання:", reply_markup=kb)
 
-            add_subscription(user_id)  # <== ВАЖЛИВО! Додаємо підписку
+                add_subscription(user_id)  # Додаємо підписку
 
-            # Додати до оброблених замовлень і зберегти
-            processed_orders.add(order_reference)
-            save_processed_orders(processed_orders)
+                processed_orders.add(order_reference)
+                save_processed_orders(processed_orders)
 
-        except Exception as e:
-            print(f"Failed to send message: {e}")
+            except Exception as e:
+                print(f"Failed to send message: {e}")
     else:
         print(f"Callback received but user_id not found or status not approved. Payload: {payload}")
 
