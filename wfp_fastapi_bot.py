@@ -61,6 +61,17 @@ def init_db():
     conn.commit()
     conn.close()
 
+def is_subscription_active(user_id: int) -> bool:
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    cursor.execute("SELECT end_time FROM subscriptions WHERE user_id = ?", (user_id,))
+    row = cursor.fetchone()
+    conn.close()
+    if row:
+        end_time = datetime.fromisoformat(row[0])
+        return end_time > datetime.utcnow()
+    return False
+
 async def check_subscriptions(bot: Bot):
     print("🔄 Перевірка підписок активна")
     while True:
