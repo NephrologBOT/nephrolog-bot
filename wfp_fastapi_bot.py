@@ -29,6 +29,12 @@ load_dotenv()
 REMINDER_DELTA = timedelta(minutes=1)  # час до закінчення для нагадування
 TRIAL_DURATION = timedelta(minutes=2)  # тривалість підписки (тестова)
 
+# 🎟 Промокоди: ключ — код, значення — знижка в %
+PROMO_CODES = {
+    "NEPHRO20": 20,
+    "FREE100": 100
+}
+
 def get_pg_connection():
     return psycopg2.connect(
         host=os.getenv("POSTGRES_HOST"),
@@ -42,6 +48,7 @@ def get_pg_connection():
 def init_db():
     conn = get_pg_connection()
     cursor = conn.cursor()
+    
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS subscriptions (
             user_id BIGINT PRIMARY KEY,
@@ -50,11 +57,22 @@ def init_db():
             notified BOOLEAN DEFAULT FALSE
         )
     ''')
+    
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS processed_orders (
             order_reference TEXT PRIMARY KEY
         )
     ''')
+
+    # 🆕 Додаємо таблицю використаних промокодів
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS used_promo_codes (
+            user_id BIGINT,
+            promo_code TEXT,
+            used_at TIMESTAMPTZ DEFAULT NOW()
+        )
+    ''')
+
     conn.commit()
     conn.close()
 
@@ -240,10 +258,79 @@ def create_invoice(uid: str, amount: str) -> str:
 @router.message(Command("start"))
 async def start_handler(message: types.Message):
     uid = message.from_user.id
-    pay_link = f"https://{DOMAIN}/pay?uid={uid}"
-    kb = types.InlineKeyboardMarkup(inline_keyboard=[[types.InlineKeyboardButton(text="💳 Оплатити", url=pay_link)]])
-    await message.answer("Привіт! Щоб оформити підписку, натисніть кнопку нижче 👇", reply_markup=kb)
+    kb = types.InlineKeyboardMarkup(inline_keyboard=[
+        [types.InlineKeyboardButton(text="💳 Оплатити", url=f"https://{DOMAIN}/pay?uid={uid}")],
+        [types.InlineKeyboardButton(text="🎟 Ввести промокод", callback_data="enter_promo")]
+    ])
+    await message.answer("Привіт! Щоб оформити підписку, оберіть опцію нижче 👇", reply_markup=kb)
 
+@router.callback_query(lambda c: c.data == "enter_promo")
+async def ask_promo_code(callback: types.CallbackQuery):
+    await callback.message.answer("Введіть ваш промокод у відповідь на це повідомлення.")
+    await callback.answer()
+@router.message(lambda message: message.reply_to_message and "промокод" in message.reply_to_message.text.lower())
+async def handle_promo_code(message: types.Message):
+    code = message.text.strip().upper()
+    discount = PROMO_CODES.get(code)
+
+    if discount is None:
+        await message.reply("❌ Промокод недійсний. Спробуйте ще раз.")
+    else:
+        uid = message.from_user.id
+        amount = float(PRICE_UAH)
+        discounted = max(0, amount * (1 - discount / 100))
+        pay_url = f"https://{DOMAIN}/pay?uid={uid}&amount={discounted:.2f}"
+
+        # ✅ Записуємо використаний промокод у БД
+        try:
+            conn = get_pg_connection()
+            cursor = conn.cursor()
+            cursor.execute(
+                "INSERT INTO used_promo_codes (user_id, promo_code) VALUES (%s, %s)",
+                (uid, code)
+            )
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            print(f"⚠️ Не вдалося зберегти промокод у БД: {e}")
+
+        await message.answer(
+            f"✅ Промокод застосовано! Знижка: {discount}%. Сума до сплати: {discounted:.2f} грн\n\nНатисніть нижче 👇",
+            reply_markup=types.InlineKeyboardMarkup(inline_keyboard=[
+                [types.InlineKeyboardButton(text="💳 Оплатити зі знижкою", url=pay_url)]
+            ])
+        )
+
+
+@router.message(Command("admin_promo"))
+async def promo_stats_handler(message: types.Message):
+    if str(message.from_user.id) != os.getenv("ADMIN_ID"):
+        await message.answer("⛔️ У вас немає доступу до цієї команди.")
+        return
+
+    try:
+        conn = get_pg_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT promo_code, COUNT(*) 
+            FROM used_promo_codes
+            GROUP BY promo_code
+            ORDER BY COUNT(*) DESC
+        """)
+        rows = cursor.fetchall()
+        conn.close()
+
+        if not rows:
+            await message.answer("Промокоди ще не використовувались.")
+        else:
+            text = "<b>📊 Статистика промокодів:</b>\n\n"
+            for code, count in rows:
+                text += f"• <code>{code}</code>: <b>{count}</b> раз(ів)\n"
+            await message.answer(text)
+    except Exception as e:
+        print(f"⚠️ Error fetching promo stats: {e}")
+        await message.answer("⚠️ Не вдалося отримати статистику.")
+# Тепер можна переходити до FastAPI маршрутів
 @app.get("/pay")
 async def pay_redirect(uid: str, amount: str = PRICE_UAH):
     invoice_url = create_invoice(uid, amount)
