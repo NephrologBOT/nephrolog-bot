@@ -86,9 +86,22 @@ async def check_subscriptions(bot: Bot):
                 await bot.send_message(user_id, "⏳ Підписка закінчується менше ніж за 5 хвилин")
                 cursor.execute("UPDATE subscriptions SET notified = 1 WHERE user_id = ?", (user_id,))
             except Exception as e:
-                print(f"Failed to send reminder to {user_id}: {e}")
+                print(f"⚠️ Не вдалося надіслати нагадування користувачу {user_id}: {e}")
 
-        # Видалити завершені підписки
+        # Видалити з групи після завершення підписки
+        cursor.execute("SELECT user_id FROM subscriptions WHERE end_time <= ?", (now.isoformat(),))
+        expired_users = cursor.fetchall()
+
+        for row in expired_users:
+            user_id = row[0]
+            try:
+                await bot.ban_chat_member(chat_id=-1002622123477, user_id=user_id)
+                await bot.unban_chat_member(chat_id=-1002622123477, user_id=user_id)
+                print(f"✅ Видалено користувача {user_id} з групи після завершення підписки")
+            except Exception as e:
+                print(f"⚠️ Не вдалося видалити користувача {user_id} з групи: {e}")
+
+        # Видалити підписку з БД
         cursor.execute("DELETE FROM subscriptions WHERE end_time <= ?", (now.isoformat(),))
 
         conn.commit()
