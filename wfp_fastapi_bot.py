@@ -61,30 +61,8 @@ def init_db():
     conn.commit()
     conn.close()
 
-def is_subscription_active(user_id: int) -> bool:
-    conn = sqlite3.connect(DB_NAME)
-    cursor = conn.cursor()
-    cursor.execute("SELECT end_time FROM subscriptions WHERE user_id = ?", (user_id,))
-    row = cursor.fetchone()
-    conn.close()
-    if row:
-        end_time = datetime.fromisoformat(row[0])
-        return end_time > datetime.utcnow()
-    return False
-
-# === Додавання підписки ===
-def add_subscription(user_id: int):
-    now = datetime.utcnow()
-    end = now + TRIAL_DURATION
-    conn = sqlite3.connect(DB_NAME)
-    cursor = conn.cursor()
-    cursor.execute("REPLACE INTO subscriptions (user_id, start_time, end_time, notified) VALUES (?, ?, ?, 0)",
-                   (user_id, now.isoformat(), end.isoformat()))
-    conn.commit()
-    conn.close()
-
-# === Перевірка підписок ===
 async def check_subscriptions(bot: Bot):
+    print("🔄 Перевірка підписок активна")
     while True:
         now = datetime.utcnow().replace(microsecond=0)
         conn = sqlite3.connect(DB_NAME)
@@ -95,6 +73,7 @@ async def check_subscriptions(bot: Bot):
                        ((now + REMINDER_DELTA).isoformat(),))
         for row in cursor.fetchall():
             user_id = row[0]
+            print(f"⏰ Перевірка нагадування для {user_id}")
             try:
                 await bot.send_message(user_id, "⏳ Підписка закінчується менше ніж за 5 хвилин")
                 cursor.execute("UPDATE subscriptions SET notified = 1 WHERE user_id = ?", (user_id,))
@@ -105,9 +84,10 @@ async def check_subscriptions(bot: Bot):
         cursor.execute("SELECT user_id FROM subscriptions WHERE end_time <= ?", (now.isoformat(),))
         for row in cursor.fetchall():
             user_id = row[0]
+            print(f"❌ Перевірка на завершення для {user_id}")
             try:
                 await bot.ban_chat_member(GROUP_ID, user_id)
-                await bot.unban_chat_member(GROUP_ID, user_id)  # миттєвий unban дозволяє повторне додавання
+                await bot.unban_chat_member(GROUP_ID, user_id)
                 print(f"User {user_id} removed from group")
             except Exception as e:
                 print(f"Failed to remove user {user_id} from group: {e}")
@@ -262,7 +242,7 @@ async def callback(request: Request):
 @app.on_event("startup")
 async def on_startup():
     init_db()  # ініціалізація БД
-    dp = Dispatcher(storage=MemoryStorage())
+    dp = Dispatcher(bot=bot, storage=MemoryStorage())
     dp.include_router(router)
     app.state.dp = dp
     await bot.set_webhook(WEBHOOK_URL)
