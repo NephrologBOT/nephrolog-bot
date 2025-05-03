@@ -122,15 +122,28 @@ async def pay_redirect(uid: str, amount: str = PRICE_UAH):
 @app.post("/wfp-callback")
 async def callback(request: Request):
     payload = await request.json()
-    user_id = payload.get("clientLastName")
     status = payload.get("transactionStatus")
+    email = payload.get("clientEmail")
 
-    if status == "Approved":
+    # Витягуємо Telegram user_id з email-у
+    user_id = None
+    if email and "@nephrolog.com" in email:
         try:
-            kb = types.InlineKeyboardMarkup(inline_keyboard=[[types.InlineKeyboardButton(text="🔗 Перейти до групи", url=GROUP_LINK)]])
-            await bot.send_message(user_id, "✅ Оплату підтверджено! Ось ваше посилання:", reply_markup=kb)
+            user_id = int(email.split("@")[0])
+        except ValueError:
+            print("Invalid user ID in email")
+
+    if status == "Approved" and user_id:
+        try:
+            kb = types.InlineKeyboardMarkup(inline_keyboard=[
+                [types.InlineKeyboardButton(text="🔗 Перейти до групи", url=GROUP_LINK)]
+            ])
+            await bot.send_message(user_id, "✅ Оплата успішна! Ось ваше посилання:", reply_markup=kb)
         except Exception as e:
             print(f"Failed to send message: {e}")
+    else:
+        print(f"Callback received but user_id not found or status not approved. Payload: {payload}")
+
     return {"code": 0}
 
 @app.on_event("startup")
