@@ -370,7 +370,7 @@ async def callback(request: Request):
         try:
             order_timestamp = int(order_reference.split("-")[2])
             age_seconds = time.time() - order_timestamp
-            if age_seconds > 180:  # 3 хвилини
+            if age_seconds > 120:  # 2 хвилини
                 print(f"⏳ Старий orderReference, ігноруємо: {order_reference}")
                 return {"code": 0}
         except (IndexError, ValueError):
