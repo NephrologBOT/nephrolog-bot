@@ -72,17 +72,6 @@ def is_subscription_active(user_id: int) -> bool:
         return end_time > datetime.utcnow()
     return False
 
-# === Додавання підписки ===
-def add_subscription(user_id: int):
-    now = datetime.utcnow()
-    end = now + TRIAL_DURATION
-    conn = sqlite3.connect(DB_NAME)
-    cursor = conn.cursor()
-    cursor.execute("REPLACE INTO subscriptions (user_id, start_time, end_time, notified) VALUES (?, ?, ?, 0)",
-                   (user_id, now.isoformat(), end.isoformat()))
-    conn.commit()
-    conn.close()
-
 # === Перевірка підписок ===
 async def check_subscriptions(bot: Bot):
     while True:
@@ -107,8 +96,18 @@ async def check_subscriptions(bot: Bot):
             user_id = row[0]
             try:
                 await bot.ban_chat_member(GROUP_ID, user_id)
-                await bot.unban_chat_member(GROUP_ID, user_id)  # миттєвий unban дозволяє повторне додавання
-                print(f"User {user_id} removed from group")
+                await bot.unban_chat_member(GROUP_ID, user_id)
+
+                pay_link = f"https://{DOMAIN}/pay?uid={user_id}"
+                kb = types.InlineKeyboardMarkup(inline_keyboard=[
+                    [types.InlineKeyboardButton(text="🔄 Продовжити підписку", url=pay_link)]
+                ])
+                await bot.send_message(
+                    user_id,
+                    "❌ Ваша підписка завершилась. Дякуємо, що були з нами!",
+                    reply_markup=kb
+                )
+                print(f"User {user_id} removed from group and notified")
             except Exception as e:
                 print(f"Failed to remove user {user_id} from group: {e}")
             cursor.execute("DELETE FROM subscriptions WHERE user_id = ?", (user_id,))
