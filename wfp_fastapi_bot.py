@@ -272,6 +272,7 @@ async def callback(request: Request):
     if status == "Approved" and user_id:
         if is_subscription_active(user_id):
             print(f"User {user_id} already has active subscription — skipping invite")
+            mark_order_as_processed(order_reference)  # ← ВАЖЛИВО: навіть якщо підписка активна
         else:
             try:
                 kb = types.InlineKeyboardMarkup(inline_keyboard=[
@@ -280,7 +281,7 @@ async def callback(request: Request):
                 await bot.send_message(user_id, "✅ Оплата успішна! Ось ваше посилання:", reply_markup=kb)
 
                 add_subscription(user_id)
-                mark_order_as_processed(order_reference)
+                mark_order_as_processed(order_reference)  # ← тут, як і раніше
             except Exception as e:
                 print(f"Failed to send message: {e}")
     else:
