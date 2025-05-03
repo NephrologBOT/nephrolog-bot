@@ -358,7 +358,7 @@ async def callback(request: Request):
     payload = await request.json()
     status = payload.get("transactionStatus")
     order_reference = payload.get("orderReference", "")
-
+    
     user_id = None
     if order_reference.startswith("order-"):
         try:
@@ -366,29 +366,26 @@ async def callback(request: Request):
         except (IndexError, ValueError):
             print(f"Cannot extract user_id from orderReference: {order_reference}")
 
+    # Завжди позначаємо як опрацьований, щоб не дублювати
     if is_order_processed(order_reference):
         print(f"Order already processed: {order_reference}")
         return {"code": 0}
+    mark_order_as_processed(order_reference)
 
     if status == "Approved" and user_id:
         try:
             if is_subscription_active(user_id):
-                print(f"User {user_id} already has active subscription — skipping invite")
+                print(f"User {user_id} already has active subscription — skipping group invite")
             else:
                 kb = types.InlineKeyboardMarkup(inline_keyboard=[
                     [types.InlineKeyboardButton(text="🔗 Перейти до групи", url=GROUP_LINK)]
                 ])
                 await bot.send_message(user_id, "✅ Оплата успішна! Ось ваше посилання:", reply_markup=kb)
                 add_subscription(user_id)
-
-            # 💾 ОБОВ'ЯЗКОВО ставимо як опрацьоване — незалежно від статусу підписки
-            mark_order_as_processed(order_reference)
-
         except Exception as e:
             print(f"Failed to process approved payment: {e}")
-
     else:
-        print(f"Callback received but user_id not found or status not approved. Payload: {payload}")
+        print(f"Callback received but status not approved or user_id missing. Payload: {payload}")
 
     return {"code": 0}
 
