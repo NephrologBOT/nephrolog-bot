@@ -6,7 +6,8 @@ import os
 import json
 import requests
 import asyncio
-import sqlite3
+import psycopg2
+from psycopg2.extras import RealDictCursor
 from datetime import datetime, timedelta
 from aiogram import Bot, types
 from dotenv import load_dotenv
@@ -25,20 +26,28 @@ GROUP_ID = -1002622123477
 
 load_dotenv()
 # === Налаштування ===
-DB_NAME = "subscriptions.db"
 REMINDER_DELTA = timedelta(minutes=1)  # час до закінчення для нагадування
 TRIAL_DURATION = timedelta(minutes=2)  # тривалість підписки (тестова)
 
+def get_pg_connection():
+    return psycopg2.connect(
+        host=os.getenv("POSTGRES_HOST"),
+        port=os.getenv("POSTGRES_PORT", "5432"),
+        dbname=os.getenv("POSTGRES_DB"),
+        user=os.getenv("POSTGRES_USER"),
+        password=os.getenv("POSTGRES_PASSWORD")
+    )
+
 # === Ініціалізація БД ===
 def init_db():
-    conn = sqlite3.connect(DB_NAME)
+    conn = get_pg_connection()
     cursor = conn.cursor()
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS subscriptions (
-            user_id INTEGER PRIMARY KEY,
-            start_time TEXT,
-            end_time TEXT,
-            notified INTEGER DEFAULT 0
+            user_id BIGINT PRIMARY KEY,
+            start_time TIMESTAMPTZ,
+            end_time TIMESTAMPTZ,
+            notified BOOLEAN DEFAULT FALSE
         )
     ''')
     cursor.execute('''
@@ -48,63 +57,71 @@ def init_db():
     ''')
     conn.commit()
     conn.close()
+
 def is_order_processed(order_reference: str) -> bool:
-    conn = sqlite3.connect(DB_NAME)
+    conn = get_pg_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT 1 FROM processed_orders WHERE order_reference = ?", (order_reference,))
+    cursor.execute("SELECT 1 FROM processed_orders WHERE order_reference = %s", (order_reference,))
     result = cursor.fetchone()
     conn.close()
     return result is not None
 
 def mark_order_as_processed(order_reference: str):
-    conn = sqlite3.connect(DB_NAME)
+    conn = get_pg_connection()
     cursor = conn.cursor()
-    cursor.execute("INSERT OR IGNORE INTO processed_orders (order_reference) VALUES (?)", (order_reference,))
+    cursor.execute("INSERT INTO processed_orders (order_reference) VALUES (%s) ON CONFLICT DO NOTHING", (order_reference,))
     conn.commit()
     conn.close()
+
 def is_subscription_active(user_id: int) -> bool:
-    conn = sqlite3.connect(DB_NAME)
+    conn = get_pg_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT end_time FROM subscriptions WHERE user_id = ?", (user_id,))
+    cursor.execute("SELECT end_time FROM subscriptions WHERE user_id = %s", (user_id,))
     row = cursor.fetchone()
     conn.close()
     if row:
-        end_time = datetime.fromisoformat(row[0])
+        end_time = row[0]
         return end_time > datetime.utcnow()
     return False
 
 def add_subscription(user_id: int):
     now = datetime.utcnow()
     end = now + TRIAL_DURATION
-    conn = sqlite3.connect(DB_NAME)
+    conn = get_pg_connection()
     cursor = conn.cursor()
-    cursor.execute(
-        "REPLACE INTO subscriptions (user_id, start_time, end_time, notified) VALUES (?, ?, ?, 0)",
-        (user_id, now.isoformat(), end.isoformat())
-    )
+    cursor.execute('''
+        INSERT INTO subscriptions (user_id, start_time, end_time, notified)
+        VALUES (%s, %s, %s, FALSE)
+        ON CONFLICT (user_id) DO UPDATE
+        SET start_time = EXCLUDED.start_time,
+            end_time = EXCLUDED.end_time,
+            notified = FALSE
+    ''', (user_id, now, end))
     conn.commit()
     conn.close()
 async def check_subscriptions(bot: Bot):
     print("🔄 Перевірка підписок активна")
     while True:
         now = datetime.utcnow().replace(microsecond=0)
-        conn = sqlite3.connect(DB_NAME)
+        conn = get_pg_connection()
         cursor = conn.cursor()
 
         # Надіслати нагадування
-        cursor.execute("SELECT user_id FROM subscriptions WHERE end_time <= ? AND notified = 0",
-                       ((now + REMINDER_DELTA).isoformat(),))
+        cursor.execute("""
+            SELECT user_id FROM subscriptions
+            WHERE end_time <= %s AND notified = FALSE
+        """, (now + REMINDER_DELTA,))
         for row in cursor.fetchall():
             user_id = row[0]
             print(f"⏰ Перевірка нагадування для {user_id}")
             try:
                 await bot.send_message(user_id, "⏳ Підписка закінчується менше ніж за 5 хвилин")
-                cursor.execute("UPDATE subscriptions SET notified = 1 WHERE user_id = ?", (user_id,))
+                cursor.execute("UPDATE subscriptions SET notified = TRUE WHERE user_id = %s", (user_id,))
             except Exception as e:
                 print(f"⚠️ Failed to send reminder to {user_id}: {e}")
 
         # Видалити завершені підписки та користувачів з групи
-        cursor.execute("SELECT user_id FROM subscriptions WHERE end_time <= ?", (now.isoformat(),))
+        cursor.execute("SELECT user_id FROM subscriptions WHERE end_time <= %s", (now,))
         for row in cursor.fetchall():
             user_id = row[0]
             print(f"❌ Перевірка на завершення для {user_id}")
@@ -121,12 +138,11 @@ async def check_subscriptions(bot: Bot):
                     "❌ Ваша підписка завершилась. Дякуємо, що були з нами!",
                     reply_markup=kb
                 )
-
                 print(f"✅ User {user_id} removed from group and notified")
             except Exception as e:
                 print(f"⚠️ Failed to remove user {user_id} from group: {e}")
 
-            cursor.execute("DELETE FROM subscriptions WHERE user_id = ?", (user_id,))
+            cursor.execute("DELETE FROM subscriptions WHERE user_id = %s", (user_id,))
 
         conn.commit()
         conn.close()
