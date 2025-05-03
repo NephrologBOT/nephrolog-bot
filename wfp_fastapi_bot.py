@@ -312,21 +312,29 @@ async def promo_stats_handler(message: types.Message):
         conn = get_pg_connection()
         cursor = conn.cursor()
         cursor.execute("""
-            SELECT promo_code, COUNT(*) 
+            SELECT promo_code, user_id
             FROM used_promo_codes
-            GROUP BY promo_code
-            ORDER BY COUNT(*) DESC
+            ORDER BY promo_code, user_id
         """)
         rows = cursor.fetchall()
         conn.close()
 
         if not rows:
             await message.answer("Промокоди ще не використовувались.")
-        else:
-            text = "<b>📊 Статистика промокодів:</b>\n\n"
-            for code, count in rows:
-                text += f"• <code>{code}</code>: <b>{count}</b> раз(ів)\n"
-            await message.answer(text)
+            return
+
+        promo_dict = {}
+        for code, uid in rows:
+            promo_dict.setdefault(code, []).append(uid)
+
+        text = "<b>📊 Статистика промокодів:</b>\n\n"
+        for code, users in promo_dict.items():
+            text += f"• <code>{code}</code>: <b>{len(users)}</b> раз(ів)\n"
+            for u in users:
+                text += f"   └ <code>{u}</code>\n"
+            text += "\n"
+
+        await message.answer(text)
     except Exception as e:
         print(f"⚠️ Error fetching promo stats: {e}")
         await message.answer("⚠️ Не вдалося отримати статистику.")
