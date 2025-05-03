@@ -63,7 +63,7 @@ def create_invoice(uid: str, amount: str) -> str:
         "productCount": product_count,
         "clientFirstName": "User",
         "clientLastName": str(uid),
-        "clientEmail": f"user{uid}@nephrolog.com"
+        "clientEmail": f"{uid}@nephrolog.com"
     }
 
     # Формуємо SIGNATURE_STRING
