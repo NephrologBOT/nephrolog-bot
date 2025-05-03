@@ -72,6 +72,17 @@ def is_subscription_active(user_id: int) -> bool:
         return end_time > datetime.utcnow()
     return False
 
+def add_subscription(user_id: int):
+    now = datetime.utcnow()
+    end = now + TRIAL_DURATION
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    cursor.execute(
+        "REPLACE INTO subscriptions (user_id, start_time, end_time, notified) VALUES (?, ?, ?, 0)",
+        (user_id, now.isoformat(), end.isoformat())
+    )
+    conn.commit()
+    conn.close()
 async def check_subscriptions(bot: Bot):
     print("🔄 Перевірка підписок активна")
     while True:
