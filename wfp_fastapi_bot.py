@@ -78,7 +78,7 @@ async def check_subscriptions(bot: Bot):
                 await bot.send_message(user_id, "⏳ Підписка закінчується менше ніж за 5 хвилин")
                 cursor.execute("UPDATE subscriptions SET notified = 1 WHERE user_id = ?", (user_id,))
             except Exception as e:
-                print(f"Failed to send reminder to {user_id}: {e}")
+                print(f"⚠️ Failed to send reminder to {user_id}: {e}")
 
         # Видалити завершені підписки та користувачів з групи
         cursor.execute("SELECT user_id FROM subscriptions WHERE end_time <= ?", (now.isoformat(),))
@@ -88,9 +88,21 @@ async def check_subscriptions(bot: Bot):
             try:
                 await bot.ban_chat_member(GROUP_ID, user_id)
                 await bot.unban_chat_member(GROUP_ID, user_id)
-                print(f"User {user_id} removed from group")
+
+                pay_link = f"https://{DOMAIN}/pay?uid={user_id}"
+                kb = types.InlineKeyboardMarkup(inline_keyboard=[
+                    [types.InlineKeyboardButton(text="🔄 Продовжити підписку", url=pay_link)]
+                ])
+                await bot.send_message(
+                    user_id,
+                    "❌ Ваша підписка завершилась. Дякуємо, що були з нами!",
+                    reply_markup=kb
+                )
+
+                print(f"✅ User {user_id} removed from group and notified")
             except Exception as e:
-                print(f"Failed to remove user {user_id} from group: {e}")
+                print(f"⚠️ Failed to remove user {user_id} from group: {e}")
+
             cursor.execute("DELETE FROM subscriptions WHERE user_id = ?", (user_id,))
 
         conn.commit()
