@@ -26,8 +26,8 @@ GROUP_ID = -1002622123477
 
 load_dotenv()
 # === Налаштування ===
-REMINDER_DELTA = timedelta(minutes=1)  # час до закінчення для нагадування
-TRIAL_DURATION = timedelta(minutes=2)  # тривалість підписки (тестова)
+REMINDER_DELTA = timedelta(minutes=30)  # нагадування за 30 хв
+TRIAL_DURATION = timedelta(hours=12)   # підписка на 12 годин
 
 # 🎟 Промокоди: ключ — код, значення — знижка в %
 PROMO_CODES = {
