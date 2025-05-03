@@ -21,23 +21,6 @@ from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_applicati
 from aiohttp import web
 from aiogram.filters import Command
 
-PROCESSED_ORDERS_FILE = "processed_orders.json"
-
-def load_processed_orders():
-    if not os.path.exists(PROCESSED_ORDERS_FILE):
-        return set()
-    with open(PROCESSED_ORDERS_FILE, "r") as f:
-        try:
-            return set(json.load(f))
-        except json.JSONDecodeError:
-            return set()
-
-def save_processed_orders(processed_orders):
-    with open(PROCESSED_ORDERS_FILE, "w") as f:
-        json.dump(list(processed_orders), f)
-
-processed_orders = load_processed_orders()
-
 GROUP_ID = -1002622123477 
 
 load_dotenv()
