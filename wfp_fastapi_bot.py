@@ -3,6 +3,7 @@ import hashlib
 import base64
 import time
 import os
+import json
 import requests
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request
@@ -15,6 +16,23 @@ from aiogram.dispatcher.dispatcher import Dispatcher
 from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
 from aiohttp import web
 from aiogram.filters import Command
+
+PROCESSED_ORDERS_FILE = "processed_orders.json"
+
+def load_processed_orders():
+    if not os.path.exists(PROCESSED_ORDERS_FILE):
+        return set()
+    with open(PROCESSED_ORDERS_FILE, "r") as f:
+        try:
+            return set(json.load(f))
+        except json.JSONDecodeError:
+            return set()
+
+def save_processed_orders(processed_orders):
+    with open(PROCESSED_ORDERS_FILE, "w") as f:
+        json.dump(list(processed_orders), f)
+
+processed_orders = load_processed_orders()
 
 load_dotenv()
 
@@ -133,12 +151,22 @@ async def callback(request: Request):
         except (IndexError, ValueError):
             print(f"Cannot extract user_id from orderReference: {order_reference}")
 
+    # Перевірка: чи вже був оброблений цей orderReference?
+    if order_reference in processed_orders:
+        print(f"Order already processed: {order_reference}")
+        return {"code": 0}
+
     if status == "Approved" and user_id:
         try:
             kb = types.InlineKeyboardMarkup(inline_keyboard=[
                 [types.InlineKeyboardButton(text="🔗 Перейти до групи", url=GROUP_LINK)]
             ])
             await bot.send_message(user_id, "✅ Оплата успішна! Ось ваше посилання:", reply_markup=kb)
+
+            # Додати до оброблених замовлень і зберегти
+            processed_orders.add(order_reference)
+            save_processed_orders(processed_orders)
+
         except Exception as e:
             print(f"Failed to send message: {e}")
     else:
