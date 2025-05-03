@@ -41,8 +41,8 @@ processed_orders = load_processed_orders()
 load_dotenv()
 # === Налаштування ===
 DB_NAME = "subscriptions.db"
-REMINDER_DELTA = timedelta(minutes=5)  # час до закінчення для нагадування
-TRIAL_DURATION = timedelta(minutes=10)  # тривалість підписки (тестова)
+REMINDER_DELTA = timedelta(minutes=1)  # час до закінчення для нагадування
+TRIAL_DURATION = timedelta(minutes=2)  # тривалість підписки (тестова)
 
 # === Ініціалізація БД ===
 def init_db():
