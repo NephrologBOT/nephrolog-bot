@@ -366,6 +366,16 @@ async def callback(request: Request):
         except (IndexError, ValueError):
             print(f"Cannot extract user_id from orderReference: {order_reference}")
 
+        # ⏳ Перевірка давності orderReference
+        try:
+            order_timestamp = int(order_reference.split("-")[2])
+            age_seconds = time.time() - order_timestamp
+            if age_seconds > 60:  # 1 хвилина
+                print(f"⏳ Старий orderReference, ігноруємо: {order_reference}")
+                return {"code": 0}
+        except (IndexError, ValueError):
+            print(f"⚠️ Не вдалося витягти timestamp з orderReference: {order_reference}")
+
     # Завжди позначаємо як опрацьований, щоб не дублювати
     if is_order_processed(order_reference):
         print(f"Order already processed: {order_reference}")
@@ -388,7 +398,6 @@ async def callback(request: Request):
         print(f"Callback received but status not approved or user_id missing. Payload: {payload}")
 
     return {"code": 0}
-
 @app.on_event("startup")
 async def on_startup():
     init_db()  # ініціалізація БД
