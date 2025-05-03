@@ -123,15 +123,15 @@ async def pay_redirect(uid: str, amount: str = PRICE_UAH):
 async def callback(request: Request):
     payload = await request.json()
     status = payload.get("transactionStatus")
-    email = payload.get("clientEmail")
+    order_reference = payload.get("orderReference", "")
 
-    # Витягуємо Telegram user_id з email-у
+    # Витягуємо Telegram user_id з orderReference (формат: order-<uid>-<timestamp>)
     user_id = None
-    if email and "@nephrolog.com" in email:
+    if order_reference.startswith("order-"):
         try:
-            user_id = int(email.split("@")[0])
-        except ValueError:
-            print("Invalid user ID in email")
+            user_id = int(order_reference.split("-")[1])
+        except (IndexError, ValueError):
+            print(f"Cannot extract user_id from orderReference: {order_reference}")
 
     if status == "Approved" and user_id:
         try:
