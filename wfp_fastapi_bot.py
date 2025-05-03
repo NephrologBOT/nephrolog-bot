@@ -58,9 +58,27 @@ def init_db():
             notified INTEGER DEFAULT 0
         )
     ''')
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS processed_orders (
+            order_reference TEXT PRIMARY KEY
+        )
+    ''')
     conn.commit()
     conn.close()
+def is_order_processed(order_reference: str) -> bool:
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    cursor.execute("SELECT 1 FROM processed_orders WHERE order_reference = ?", (order_reference,))
+    result = cursor.fetchone()
+    conn.close()
+    return result is not None
 
+def mark_order_as_processed(order_reference: str):
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    cursor.execute("INSERT OR IGNORE INTO processed_orders (order_reference) VALUES (?)", (order_reference,))
+    conn.commit()
+    conn.close()
 def is_subscription_active(user_id: int) -> bool:
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
@@ -247,7 +265,7 @@ async def callback(request: Request):
             print(f"Cannot extract user_id from orderReference: {order_reference}")
 
     # Перевірка: чи вже був оброблений цей orderReference?
-    if order_reference in processed_orders:
+    if is_order_processed(order_reference):
         print(f"Order already processed: {order_reference}")
         return {"code": 0}
 
@@ -261,11 +279,8 @@ async def callback(request: Request):
                 ])
                 await bot.send_message(user_id, "✅ Оплата успішна! Ось ваше посилання:", reply_markup=kb)
 
-                add_subscription(user_id)  # Додаємо підписку
-
-                processed_orders.add(order_reference)
-                save_processed_orders(processed_orders)
-
+                add_subscription(user_id)
+                mark_order_as_processed(order_reference)
             except Exception as e:
                 print(f"Failed to send message: {e}")
     else:
