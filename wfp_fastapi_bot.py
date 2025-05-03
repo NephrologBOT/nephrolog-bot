@@ -192,6 +192,12 @@ async def start_handler(message: types.Message):
     kb = types.InlineKeyboardMarkup(inline_keyboard=[[types.InlineKeyboardButton(text="💳 Оплатити", url=pay_link)]])
     await message.answer("Привіт! Щоб оформити підписку, натисніть кнопку нижче 👇", reply_markup=kb)
 
+
+@router.message()
+async def debug_chat_id(message: types.Message):
+    print(f"Chat ID: {message.chat.id}")
+    await message.answer(f"Chat ID: {message.chat.id}")
+
 @app.get("/pay")
 async def pay_redirect(uid: str, amount: str = PRICE_UAH):
     invoice_url = create_invoice(uid, amount)
