@@ -73,7 +73,7 @@ def add_subscription(user_id: int):
 # === Перевірка підписок ===
 async def check_subscriptions(bot: Bot):
     while True:
-        now = datetime.utcnow()
+        now = datetime.utcnow().replace(microsecond=0)
         conn = sqlite3.connect(DB_NAME)
         cursor = conn.cursor()
 
