@@ -38,6 +38,8 @@ def save_processed_orders(processed_orders):
 
 processed_orders = load_processed_orders()
 
+GROUP_ID = -1002622123477 
+
 load_dotenv()
 # === Налаштування ===
 DB_NAME = "subscriptions.db"
@@ -86,28 +88,23 @@ async def check_subscriptions(bot: Bot):
                 await bot.send_message(user_id, "⏳ Підписка закінчується менше ніж за 5 хвилин")
                 cursor.execute("UPDATE subscriptions SET notified = 1 WHERE user_id = ?", (user_id,))
             except Exception as e:
-                print(f"⚠️ Не вдалося надіслати нагадування користувачу {user_id}: {e}")
+                print(f"Failed to send reminder to {user_id}: {e}")
 
-        # Видалити з групи після завершення підписки
+        # Видалити завершені підписки та користувачів з групи
         cursor.execute("SELECT user_id FROM subscriptions WHERE end_time <= ?", (now.isoformat(),))
-        expired_users = cursor.fetchall()
-
-        for row in expired_users:
+        for row in cursor.fetchall():
             user_id = row[0]
             try:
-                await bot.ban_chat_member(chat_id=-1002622123477, user_id=user_id)
-                await bot.unban_chat_member(chat_id=-1002622123477, user_id=user_id)
-                print(f"✅ Видалено користувача {user_id} з групи після завершення підписки")
+                await bot.ban_chat_member(GROUP_ID, user_id)
+                await bot.unban_chat_member(GROUP_ID, user_id)  # миттєвий unban дозволяє повторне додавання
+                print(f"User {user_id} removed from group")
             except Exception as e:
-                print(f"⚠️ Не вдалося видалити користувача {user_id} з групи: {e}")
-
-        # Видалити підписку з БД
-        cursor.execute("DELETE FROM subscriptions WHERE end_time <= ?", (now.isoformat(),))
+                print(f"Failed to remove user {user_id} from group: {e}")
+            cursor.execute("DELETE FROM subscriptions WHERE user_id = ?", (user_id,))
 
         conn.commit()
         conn.close()
-
-        await asyncio.sleep(60)  # перевірка щохвилини
+        await asyncio.sleep(60)
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 WAYFORPAY_ACCOUNT = os.getenv("WAYFORPAY_ACCOUNT")
@@ -204,12 +201,6 @@ async def start_handler(message: types.Message):
     pay_link = f"https://{DOMAIN}/pay?uid={uid}"
     kb = types.InlineKeyboardMarkup(inline_keyboard=[[types.InlineKeyboardButton(text="💳 Оплатити", url=pay_link)]])
     await message.answer("Привіт! Щоб оформити підписку, натисніть кнопку нижче 👇", reply_markup=kb)
-
-
-@router.message()
-async def debug_chat_id(message: types.Message):
-    print(f"Chat ID: {message.chat.id}")
-    await message.answer(f"Chat ID: {message.chat.id}")
 
 @app.get("/pay")
 async def pay_redirect(uid: str, amount: str = PRICE_UAH):
